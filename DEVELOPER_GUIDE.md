@@ -247,3 +247,334 @@ Kalau respons bukan 2xx pada aksi manapun di atas, body respons mentah
 ditampilkan di area status bersama method+status HTTP-nya. Kalau
 `fetch()` gagal (network error/CORS), pesan generiknya sama dengan fitur
 lain (kemungkinan CORS/lingkungan terbatas/server tidak terjangkau).
+
+## Lacak Proses
+
+Sumber: `src/composables/useProcessTracking.ts` + `src/components/TrackProcessDialog.vue` +
+`src/components/ProcessInstanceCard.vue`. Fitur ini memvisualisasikan
+posisi instance yang sedang berjalan langsung di kanvas diagram (marker
+CSS `.active-node-highlight` yang berdenyut oranye), bukan cuma menampilkan
+data.
+
+### Cari instance (running, dengan fallback riwayat)
+
+Kalau Process Instance ID diisi:
+
+```
+GET /runtime/process-instances/{pid}
+```
+
+HTTP 404 pada endpoint ini berarti "tidak sedang berjalan" (bukan error) —
+langsung lanjut ke fallback riwayat di bawah, bukan ditampilkan sebagai
+kegagalan.
+
+Kalau Business Key yang diisi (bukan PID):
+
+```
+GET /runtime/process-instances?businessKey=<key>
+```
+
+Kalau ditemukan instance yang sedang berjalan (list tidak kosong): untuk
+setiap PID hasil, aplikasi memanggil `GET
+/runtime/executions?processInstanceId={pid}` secara paralel (`Promise.all`)
+untuk mengumpulkan `activityId` dari tiap execution aktifnya, lalu setiap
+ID elemen BPMN yang cocok dengan `elementRegistry` bpmn-js pada diagram
+yang sedang terbuka di-highlight lewat `canvas.addMarker(id,
+'active-node-highlight')`. Elemen yang tidak ditemukan di diagram (mis.
+sedang membuka diagram versi lain) dilewati diam-diam.
+
+Kalau tidak ditemukan yang sedang berjalan, sorotan dibersihkan
+(`canvas.removeMarker`) dan aplikasi fallback ke riwayat:
+
+```
+GET /history/historic-process-instances?processInstanceId=<pid>
+GET /history/historic-process-instances?businessKey=<key>
+```
+
+Instance dari riwayat ditampilkan tanpa tombol Lihat Variabel dan tanpa
+highlight (proses sudah selesai, tidak ada node aktif).
+
+### Lihat Variabel (instance yang sedang berjalan)
+
+```
+GET /runtime/process-instances/{instanceId}/variables
+```
+
+Menerima dua bentuk respons dari Flowable (keduanya ditangani): array
+`[{ name, value }, ...]` langsung, atau envelope `{ data: [{ name, value
+}, ...] }` — dipakai bentuk mana pun yang cocok.
+
+### Refresh Otomatis
+
+Tidak ada endpoint baru — hanya mengulang query pencarian instance +
+`/runtime/executions` di atas pada interval yang ditentukan user (minimum
+3 detik, sisi client memaksa `Math.max(3, intervalSeconds)`), dan berhenti
+otomatis (membersihkan sorotan) begitu instance yang dipantau terdeteksi
+sudah tidak berjalan lagi. Kontrol ini hanya muncul di UI selagi ada
+instance yang sedang berjalan hasil pencarian terakhir.
+
+## Kontrol Proses
+
+Sumber: `src/composables/useProcessControl.ts` + `src/components/ProcessControlDialog.vue`.
+Lima aksi berbeda, semuanya melapor ke satu area status yang sama.
+
+### Suspend / Aktifkan instance
+
+```
+PUT /runtime/process-instances/{pid}
+Content-Type: application/json
+
+{ "action": "suspend" }   atau   { "action": "activate" }
+```
+
+### Hentikan (cancel) instance
+
+```
+DELETE /runtime/process-instances/{pid}[?deleteReason=<alasan>]
+```
+
+Parameter `deleteReason` hanya disertakan di query string kalau field
+alasan diisi. Sukses = HTTP 204 **atau** 2xx lainnya. Kalau berhasil,
+dialog membersihkan field Process Instance ID (sama seperti versi HTML
+lama) — instance yang sudah dihentikan tidak bisa dicari lagi lewat
+`/runtime/`.
+
+### Suspend / Aktifkan Process Definition
+
+```
+PUT /repository/process-definitions/{processDefinitionId}
+Content-Type: application/json
+
+{ "action": "suspend", "includeProcessInstances": true }
+```
+
+atau `"action": "activate"`. `includeProcessInstances` berasal dari
+checkbox "sertakan instance yang berjalan" di dialog — kalau `true`,
+seluruh instance yang sedang berjalan dari definisi tersebut ikut
+di-suspend/diaktifkan bersamaan; kalau `false`, instance yang sedang
+berjalan tidak terpengaruh (tetap berjalan meski definisinya di-suspend,
+sehingga instance baru saja yang tidak bisa dibuat).
+
+Semua lima aksi Kontrol Proses: kalau respons bukan 2xx, body respons
+mentah ditampilkan di area status. Tidak ada perintah curl alternatif
+untuk fitur ini (beda dengan Deploy/Start Instance) — kalau `fetch()`
+gagal, hanya pesan error generik yang ditampilkan.
+
+## Riwayat / Audit Trail
+
+Sumber: `src/composables/useAuditTrail.ts` + `src/components/AuditTrailDialog.vue`.
+Dua panggilan berurutan (yang kedua baru dijalankan kalau yang pertama
+menemukan sesuatu):
+
+```
+GET /history/historic-process-instances?processInstanceId=<pid>
+GET /history/historic-process-instances?businessKey=<key>
+```
+
+Kalau list hasil kosong, pencarian berhenti di sini dengan pesan "tidak
+ditemukan di riwayat" (menyarankan coba "Lacak Proses…" kalau prosesnya
+baru saja dimulai dan belum masuk riwayat). Kalau ditemukan, item pertama
+dari list dipakai sebagai ringkasan instance (`summary` — field yang
+dibaca: `id`, `businessKey`, `processDefinitionId`, `startTime`,
+`endTime`, `durationInMillis`), lalu:
+
+```
+GET /history/historic-activity-instances?processInstanceId=<id dari langkah sebelumnya>&sort=startTime&order=asc
+```
+
+Hasilnya (`data: HistoricActivityInstance[]`) dirender sebagai timeline
+terurut kronologis, field per aktivitas: `activityId`, `activityName`,
+`activityType` (dipetakan ke label Indonesia lewat `activityTypeLabel()` —
+lihat daftar pemetaan lengkapnya di `useAuditTrail.ts`, tipe yang tidak ada
+di daftar fallback ke versi ber-spasi & kapital dari nama tipe mentahnya),
+`assignee`, `startTime`, `endTime`, `durationInMillis` (diformat ke
+"X hari Y jam Z menit" lewat `formatDuration()` — hari/jam/menit hanya
+ditampilkan kalau bukan nol, detik hanya ditampilkan kalau tidak ada
+hari/jam yang ditampilkan).
+
+Kalau salah satu dari dua request di atas gagal (HTTP non-2xx atau network
+error), pesan error yang sama ditampilkan untuk keduanya (mengandung
+status HTTP + body respons kalau ada, atau hint CORS/network kalau
+`fetch()`-nya sendiri gagal).
+
+## Dashboard Ringkasan
+
+Sumber: `src/composables/useDashboardSummary.ts` + `src/components/DashboardDialog.vue`.
+Satu request untuk daftar proses, lalu empat request statistik **per**
+proses (dijalankan paralel untuk semua proses sekaligus lewat
+`Promise.all`):
+
+```
+GET /repository/process-definitions?latest=true&size=100
+```
+
+Hanya versi terbaru tiap process definition key yang diambil
+(`latest=true`) — kalau kosong, ditampilkan "Tidak ada Process Definition
+yang ditemukan di server ini." dan berhenti di situ. Untuk setiap
+definisi (`key`, `name`, `version`), empat panggilan berikut dijalankan
+paralel:
+
+```
+GET /runtime/process-instances?processDefinitionKey=<key>&size=0            → "running"
+GET /history/historic-process-instances?processDefinitionKey=<key>&finished=true&size=0  → "completed"
+GET /runtime/tasks?processDefinitionKey=<key>&size=0                         → "openTasks"
+GET /runtime/tasks?processDefinitionKey=<key>&size=0&dueBefore=<sekarang, ISO>  → "overdue"
+```
+
+`size=0` dipakai di semua empat endpoint di atas karena aplikasi ini
+**hanya butuh field `total` dari respons** (jumlah, bukan isi list-nya) —
+Flowable tetap menyertakan `total` di response envelope walau `size=0`
+membuat array `data`-nya kosong, jadi ini menghindari transfer data yang
+tidak terpakai. `dueBefore` pada query "overdue" memakai timestamp
+`new Date().toISOString()` yang diambil sekali di awal `load()` dan dipakai
+sama untuk semua baris (bukan per-baris saat itu juga), supaya semua baris
+dashboard konsisten dibandingkan terhadap titik waktu yang sama.
+
+Setiap dari empat panggilan di atas ditangani **independen** — HTTP
+non-2xx atau network error pada salah satu endpoint menghasilkan `null`
+untuk kolom itu saja (ditampilkan sebagai "?" di tabel), tanpa
+menggagalkan tiga kolom lainnya di baris yang sama atau baris-baris lain.
+Tidak ada pesan error yang ditampilkan untuk kegagalan per-kolom ini
+(silent fallback ke `null`) — hanya kegagalan pada request daftar proses
+definition di awal yang menampilkan pesan error di area status.
+
+Baris hasil diurutkan overdue-terbanyak-dulu, lalu nama proses
+(alfabetis) sebagai tie-breaker.
+
+## Catatan Approval (comments)
+
+Sumber: `src/composables/useTaskComments.ts` + `src/components/CommentsDialog.vue`.
+
+### Muat Catatan
+
+```
+GET /runtime/tasks/{taskId}/comments
+```
+
+Menerima dua bentuk respons: array langsung, atau envelope `{ data: [...]
+}`. Field per catatan (`TaskComment`) yang dipakai: `id`, `message`,
+`author`, `time`, `taskId`.
+
+### Tambah Catatan
+
+```
+POST /runtime/tasks/{taskId}/comments
+Content-Type: application/json
+
+{ "message": "<isi catatan>", "saveProcessInstanceId": true, "author": "<opsional>" }
+```
+
+`author` hanya disertakan kalau field-nya diisi. `saveProcessInstanceId:
+true` **wajib** ada di body — inilah yang membuat catatan tetap ada dan
+bisa dibaca lewat endpoint yang sama meski task-nya sudah selesai
+(kalau field ini tidak dikirim, Flowable menghapus komentarnya begitu task
+selesai). Setelah berhasil menambah, aplikasi otomatis memanggil ulang GET
+di atas (`loadComments(taskId, showStatus=false)`) untuk me-refresh daftar
+— parameter kedua bernilai `false` supaya pesan "Catatan berhasil
+ditambahkan." tidak langsung tertimpa pesan "Ditemukan N catatan." dari
+refresh tersebut.
+
+## Lampiran Dokumen
+
+Sumber: `src/composables/useTaskAttachments.ts` + `src/components/AttachmentsDialog.vue` +
+`src/components/AttachmentRow.vue`. Fitur ini mengagregasi lampiran dari
+**SETIAP** task historis satu process instance (bukan cuma yang aktif),
+karena tujuannya melihat dokumen yang di-attach di tahap-tahap yang sudah
+selesai sekalipun.
+
+### Resolve Process Instance ID
+
+Kalau user mengisi Business Key (bukan PID langsung), PID di-resolve dulu
+lewat pola runtime-lalu-fallback-riwayat yang sama seperti fitur Lacak
+Proses/Riwayat:
+
+```
+GET /runtime/process-instances?businessKey=<key>
+GET /history/historic-process-instances?businessKey=<key>   (fallback kalau runtime kosong)
+```
+
+### Cari task & lampiran
+
+Setelah PID didapat:
+
+```
+GET /history/historic-task-instances?processInstanceId=<pid>&size=200
+GET /runtime/tasks?processInstanceId=<pid>
+```
+
+Panggilan pertama mengambil SEMUA task (selesai maupun belum) untuk
+dijadikan lookup nama tahap (`taskNameById`, dipakai untuk label "tahap
+asal" di tiap baris lampiran) dan sumber daftar task yang akan dicek
+lampirannya. Panggilan kedua mengambil task yang MASIH aktif — dipakai
+`isTaskActive(taskId)` untuk menentukan tahap mana yang boleh
+ditambah/dihapus lampirannya (Flowable menolak mutasi lampiran pada task
+yang sudah selesai); kegagalan pada panggilan kedua ditangani lunak
+(fallback ke list kosong, tidak menggagalkan seluruh pencarian).
+
+Kalau task historis kosong (proses baru saja dimulai, belum ada task
+tercatat), pencarian berhenti di situ tanpa memanggil endpoint lampiran.
+Kalau tidak, untuk **setiap** ID task historis (paralel via `Promise.all`,
+kegagalan per-task ditangani lunak → array kosong untuk task itu saja):
+
+```
+GET /runtime/tasks/{taskId}/attachments
+```
+
+Field per lampiran (`TaskAttachment`, digabung dengan `taskId` +
+`taskName` dari lookup di atas sebelum ditambahkan ke daftar gabungan):
+`id`, `name`, `description`, `type`, `userId`, `time`, `externalUrl`.
+Hasil gabungan dari semua task diurutkan waktu-terbaru-dulu
+(`time.localeCompare` terbalik).
+
+### Unduh / Buka lampiran
+
+- Kalau lampiran bertipe URL (`externalUrl` terisi) — tidak ada request,
+  langsung `window.open(externalUrl, '_blank')`.
+- Kalau lampiran berupa file: `GET
+  /runtime/tasks/{taskId}/attachments/{attachmentId}/content` — isinya
+  diambil sebagai `Blob`, dibungkus jadi Object URL sementara, lalu
+  di-trigger sebagai unduhan lewat elemen `<a download>` yang dibuat dan
+  langsung dihapus dari DOM (Object URL di-revoke setelah 4 detik).
+
+### Hapus lampiran
+
+```
+DELETE /runtime/tasks/{taskId}/attachments/{attachmentId}
+```
+
+Hanya bisa dipanggil dari baris yang tahap asalnya `isTaskActive(taskId)`
+bernilai true (tombol Hapus tersembunyi di baris lain). Sukses = HTTP 2xx
+atau 204.
+
+### Tambah lampiran baru
+
+Endpoint yang sama untuk dua mode berbeda, dibedakan oleh Content-Type dan
+bentuk body:
+
+**Mode upload file** (ada file dipilih):
+
+```
+POST /runtime/tasks/{taskId}/attachments
+Content-Type: multipart/form-data  (di-set otomatis oleh browser)
+```
+
+Body (`FormData`): `name`, `description` (opsional, hanya disertakan kalau
+diisi), `type` (diisi dari `file.type` milik browser, fallback ke string
+literal `"file"` kalau browser tidak mendeteksi MIME type-nya), `file`
+(File asli).
+
+**Mode tautan URL** (field Tautan URL diisi, tidak ada file dipilih):
+
+```
+POST /runtime/tasks/{taskId}/attachments
+Content-Type: application/json
+
+{ "name": "<nama>", "type": "url", "externalUrl": "<url>", "description": "<opsional>" }
+```
+
+Kedua mode: target `taskId` wajib berasal dari task yang masih aktif
+(dropdown tujuan di dialog hanya menampilkan `activeTasks`); minimal satu
+dari file atau Tautan URL harus diisi, dan `name` wajib diisi — divalidasi
+di sisi client sebelum request dikirim. Setelah berhasil, daftar lampiran
+otomatis di-refresh lewat pemanggilan ulang alur "Cari task & lampiran" di
+atas.
