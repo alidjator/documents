@@ -4,27 +4,27 @@ Port bertahap dari BPMN Studio versi single-file HTML (bpmn-js + vanilla JS)
 ke aplikasi Vue 3 + TypeScript + Vuetify, untuk diintegrasikan ke project
 yang sudah berjalan.
 
-**Status: Editor inti + Deploy + Start Instance + Task + Lacak Proses +
-Kontrol Proses + Riwayat/Audit Trail + Dashboard Ringkasan + Catatan
-Approval + Lampiran Dokumen + Grup & User + Notifikasi Task Baru
-selesai** — canvas & toolbar dasar, Deploy ke Flowable, Start Instance
-(dengan deteksi variabel otomatis dari diagram), Task (cari/klaim/
-selesaikan, reassign/delegasikan/resolve, due date & prioritas, filter &
-sort), Lacak Proses (sorot node aktif di kanvas secara real-time, dengan
-refresh otomatis dan fallback ke riwayat), Kontrol Proses (suspend/
-aktifkan/hentikan instance, suspend/aktifkan definisi proses), Riwayat/
-Audit Trail (timeline lengkap tiap tahap satu process instance), Dashboard
-Ringkasan (statistik lintas semua proses yang pernah dideploy), Catatan
-Approval (lihat/tambah catatan pada sebuah task, tetap tersimpan walau
-task-nya sudah selesai), Lampiran Dokumen (agregasi semua dokumen yang
-dilampirkan di sepanjang alur satu process instance — termasuk di tahap
-yang sudah selesai — dengan tambah/hapus lampiran hanya di task yang masih
-aktif), Grup & User (cari/buat candidate group, lihat & tambah anggota,
-buat user baru), dan Notifikasi Task Baru (polling berkala candidate
-group, badge lonceng di toolbar, notifikasi peramban kalau diizinkan,
-terus berjalan walau dialognya ditutup). 1 fitur Flowable REST lain
-(Bandingkan Versi Diagram) belum di-port; lihat "Rencana Fase Berikutnya"
-di bawah.
+**Status: semua fitur dari versi HTML lama sudah selesai di-port** —
+canvas & toolbar dasar, Deploy ke Flowable, Start Instance (dengan deteksi
+variabel otomatis dari diagram), Task (cari/klaim/selesaikan, reassign/
+delegasikan/resolve, due date & prioritas, filter & sort), Lacak Proses
+(sorot node aktif di kanvas secara real-time, dengan refresh otomatis dan
+fallback ke riwayat), Kontrol Proses (suspend/aktifkan/hentikan instance,
+suspend/aktifkan definisi proses), Riwayat/Audit Trail (timeline lengkap
+tiap tahap satu process instance), Dashboard Ringkasan (statistik lintas
+semua proses yang pernah dideploy), Catatan Approval (lihat/tambah catatan
+pada sebuah task, tetap tersimpan walau task-nya sudah selesai), Lampiran
+Dokumen (agregasi semua dokumen yang dilampirkan di sepanjang alur satu
+process instance — termasuk di tahap yang sudah selesai — dengan tambah/
+hapus lampiran hanya di task yang masih aktif), Grup & User (cari/buat
+candidate group, lihat & tambah anggota, buat user baru), Notifikasi Task
+Baru (polling berkala candidate group, badge lonceng di toolbar,
+notifikasi peramban kalau diizinkan, terus berjalan walau dialognya
+ditutup), dan Bandingkan Versi Diagram (bandingkan dua versi Process
+Definition yang sudah dideploy — elemen ditambahkan/dihapus/diubah,
+dianalisis lewat XML masing-masing versi langsung di peramban). Rencana
+lanjutan berupa fitur baru di luar cakupan tool aslinya ada di "Rencana
+Fase Berikutnya" di bawah.
 
 ## Menjalankan
 
@@ -103,7 +103,13 @@ tetap berjalan di latar** — task baru yang muncul saat dialog tertutup
 tercermin di badge lonceng toolbar, dibuka lagi menampilkan entri log &
 status terbaru, Berhentikan menghentikan interval sungguhan (dicek tidak
 ada tick lagi setelahnya), dan tombol Izinkan Notifikasi Peramban
-menampilkan status granted/denied/tidak tersedia tanpa error).
+menampilkan status granted/denied/tidak tersedia tanpa error), dan
+Bandingkan Versi Diagram (cari versi untuk key yang tidak ditemukan/error
+HTTP, dua versi sungguhan yang beda elemen — added/removed/modified
+lengkap dengan pesan perubahan nama & tujuan alur — terhitung benar,
+versi tunggal dibandingkan ke dirinya sendiri menampilkan pesan "tidak
+ada perbedaan", kegagalan HTTP saat mengambil XML salah satu versi, dan
+dialog yang mengosongkan hasil tiap kali dibuka ulang).
 
 ## Konfigurasi Flowable (.env)
 
@@ -253,6 +259,19 @@ src/
                           supaya polling & badge lonceng toolbar tetap
                           jalan walau dialognya ditutup — lihat komentar
                           di file ini untuk alasannya.
+    useCompareVersions.ts  Logika Bandingkan Versi Diagram: cari semua versi
+                          Process Definition dengan key yang sama
+                          (/repository/process-definitions?key=...&sort=
+                          version&order=desc), ambil XML mentah tiap versi
+                          (/repository/process-definitions/{id}/
+                          resourcedata), lalu diff sepenuhnya di sisi
+                          peramban — tidak ada endpoint diff bawaan di
+                          Flowable REST API. Parsing pakai DOMParser bawaan
+                          browser, elemen dikumpulkan per id (tag, name,
+                          sourceRef, targetRef, attachedToRef), lalu
+                          dibandingkan jadi ditambahkan/dihapus/diubah/tidak
+                          berubah. Pakai ulang `activityTypeLabel` dari
+                          useAuditTrail.ts untuk label tipe elemen.
   components/
     BpmnEditor.vue         Komponen utama: canvas + toolbar + file input
                           tersembunyi untuk "Buka" + dialog export/deploy/
@@ -335,6 +354,14 @@ src/
                           entri log task baru. Menerima instance
                           useNotifyTasks() dari BpmnEditor.vue lewat prop
                           `notify`, bukan membuatnya sendiri.
+    CompareVersionsDialog.vue  Dialog Bandingkan Versi Diagram: URL
+                          (read-only), Process Definition Key + tombol Cari
+                          Versi, pilihan Versi A/Versi B (select, otomatis
+                          terisi versi terbaru vs sebelumnya), tombol
+                          Bandingkan, ringkasan jumlah perbedaan, daftar
+                          kartu berwarna untuk elemen Ditambahkan (hijau)/
+                          Dihapus (merah)/Diubah (kuning, dengan rincian
+                          perubahan), area status.
     StatusBox.vue          Kotak status/output monospace yang dipakai
                           bersama oleh semua dialog fitur Flowable.
   plugins/vuetify.ts        Setup Vuetify + tema warna (dipetakan dari
@@ -368,11 +395,8 @@ Anda.
 
 ## Rencana Fase Berikutnya
 
-Fitur-fitur ini ada di versi HTML lama dan belum di-port. Semuanya sudah
-diverifikasi detail endpoint/parameter Flowable REST-nya (lihat riwayat
-percakapan / README.md versi HTML lama) — pekerjaan yang tersisa murni soal
-menulis ulang jadi komponen Vue + composable TypeScript, bukan riset ulang
-API-nya:
+Semua fitur yang ada di versi HTML lama sudah selesai di-port ke Vue +
+TypeScript — daftar di bawah ini murni catatan riwayat portingnya:
 
 - ~~Deploy ke Flowable~~ (selesai — lihat `useDeployFlowable.ts` +
   `DeployDialog.vue`)
@@ -401,18 +425,19 @@ API-nya:
   `IdentityDialog.vue` + `GroupRow.vue`)
 - ~~Notifikasi Task Baru (polling)~~ (selesai — lihat `useNotifyTasks.ts` +
   `NotifyDialog.vue` + lonceng badge di `EditorToolbar.vue`)
-- Bandingkan Versi Diagram
+- ~~Bandingkan Versi Diagram~~ (selesai — lihat `useCompareVersions.ts` +
+  `CompareVersionsDialog.vue`)
 
-Pola yang disarankan untuk tiap fitur (sudah dipakai di Deploy, tinggal
-diikuti untuk sisanya): satu composable `useXxx.ts` untuk logika (fetch ke
-Flowable, state reaktif: `statusMessage`/`statusIsError`/`isLoading`/hasil)
-+ satu komponen `XxxDialog.vue` untuk tampilannya (`v-dialog` + field-field
-Vuetify). Baca `baseUrl`/`authHeader` dari `useFlowableStore()` — jangan
-tambahkan field URL/username/password baru per fitur seperti kelemahan
-versi HTML lama, dan jangan tampilkan username/password di UI manapun
-(konsisten dengan "Konfigurasi Flowable" di atas). Tambahkan dropdown-item
-baru di `EditorToolbar.vue`'s menu "Flowable" untuk membuka dialog fitur
-tersebut.
+Fitur baru di luar cakupan tool aslinya bisa ditambahkan mengikuti pola
+yang sudah dipakai konsisten di atas: satu composable `useXxx.ts` untuk
+logika (fetch ke Flowable, state reaktif: `statusMessage`/`statusIsError`/
+`isLoading`/hasil) + satu komponen `XxxDialog.vue` untuk tampilannya
+(`v-dialog` + field-field Vuetify). Baca `baseUrl`/`authHeader` dari
+`useFlowableStore()` — jangan tambahkan field URL/username/password baru
+per fitur seperti kelemahan versi HTML lama, dan jangan tampilkan
+username/password di UI manapun (konsisten dengan "Konfigurasi Flowable"
+di atas). Tambahkan dropdown-item baru di `EditorToolbar.vue`'s menu
+"Flowable" untuk membuka dialog fitur tersebut.
 
 ## Catatan Teknis
 
