@@ -1,115 +1,166 @@
 # BPMN Studio (Vue 3 + TypeScript)
 
-Port bertahap dari BPMN Studio versi single-file HTML (bpmn-js + vanilla JS)
-ke aplikasi Vue 3 + TypeScript + Vuetify, untuk diintegrasikan ke project
-yang sudah berjalan.
+| Dibuat oleh | Tanggal |
+| - | - |
+| alidjator@gmail.com | 2 September 2026 |
 
-**Status: semua fitur dari versi HTML lama sudah selesai di-port** —
-canvas & toolbar dasar, Deploy ke Flowable, Start Instance (dengan deteksi
-variabel otomatis dari diagram), Task (cari/klaim/selesaikan, reassign/
-delegasikan/resolve, due date & prioritas, filter & sort), Lacak Proses
-(sorot node aktif di kanvas secara real-time, dengan refresh otomatis dan
-fallback ke riwayat), Kontrol Proses (suspend/aktifkan/hentikan instance,
-suspend/aktifkan definisi proses), Riwayat/Audit Trail (timeline lengkap
-tiap tahap satu process instance), Dashboard Ringkasan (statistik lintas
-semua proses yang pernah dideploy), Catatan Approval (lihat/tambah catatan
-pada sebuah task, tetap tersimpan walau task-nya sudah selesai), Lampiran
-Dokumen (agregasi semua dokumen yang dilampirkan di sepanjang alur satu
-process instance — termasuk di tahap yang sudah selesai — dengan tambah/
-hapus lampiran hanya di task yang masih aktif), Grup & User (cari/buat
-candidate group, lihat & tambah anggota, buat user baru), Notifikasi Task
-Baru (polling berkala candidate group, badge lonceng di toolbar,
-notifikasi peramban kalau diizinkan, terus berjalan walau dialognya
-ditutup), dan Bandingkan Versi Diagram (bandingkan dua versi Process
-Definition yang sudah dideploy — elemen ditambahkan/dihapus/diubah,
-dianalisis lewat XML masing-masing versi langsung di peramban). Rencana
-lanjutan berupa fitur baru di luar cakupan tool aslinya ada di "Rencana
-Fase Berikutnya" di bawah.
+Editor diagram BPMN dan DMN berbasis Vue 3 + TypeScript + Vuetify yang
+terintegrasi dengan Flowable REST API. Didesain untuk disematkan (embed)
+sebagai komponen `<BpmnEditor>` dan/atau `<DmnEditor>` — independen satu
+sama lain — ke dalam project Vue yang sudah berjalan — lihat [Integrasi ke
+Project Lain](#integrasi-ke-project-lain).
 
-## Menjalankan
+Untuk referensi lengkap endpoint Flowable + parameter yang dikirim tiap
+fitur, lihat [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md).
+
+## Fitur
+
+| Fitur | Deskripsi |
+| - | - |
+| Editor Diagram | Canvas BPMN (bpmn-js) dengan toolbar Baru/Buka/Undo/Redo/Export, palette drag-and-drop elemen BPMN, dan kontrol zoom. |
+| Panel Properti | Panel di sisi kanan kanvas `<BpmnEditor>` — klik elemen apa pun untuk mengedit propertinya langsung (ID/nama proses, Candidate Groups/Users/Assignee & multi-instance untuk User Task, Decision Table Reference Key untuk Business Rule Task, Condition Expression untuk Sequence Flow). Murni client-side lewat API bpmn-js, tidak memanggil Flowable REST sama sekali — lihat [Catatan Teknis](#catatan-teknis). Khusus `<BpmnEditor>`; `<DmnEditor>` tidak punya panel ini karena decision table sudah bisa diedit langsung di grid bawaan dmn-js. |
+| Deploy ke Flowable | Kirim diagram sebagai deployment baru — key proses yang sama otomatis menjadi versi baru tanpa menimpa versi lama. |
+| Muat dari Flowable | Kebalikan dari Deploy — cari Process Definition yang sudah dideploy by key, pilih versinya, lalu muat XML-nya langsung ke editor. |
+| Start Instance | Jalankan process instance baru dari diagram yang terbuka, dengan deteksi otomatis variabel proses dari kondisi gateway/candidate group. |
+| Task | Cari, klaim, selesaikan, reassign, delegasikan/resolve, serta atur due date & prioritas task. |
+| Lacak Proses | Visualisasi real-time posisi instance yang sedang berjalan langsung di kanvas, dengan refresh otomatis dan fallback ke riwayat. |
+| Kontrol Proses | Suspend/aktifkan/hentikan instance, serta suspend/aktifkan definisi proses. |
+| Riwayat / Audit Trail | Timeline lengkap tiap tahap yang dilalui satu process instance (siapa mengerjakan, kapan, berapa lama). |
+| Dashboard Ringkasan | Statistik (instance berjalan/selesai, task terbuka/terlambat) lintas semua proses yang pernah dideploy. |
+| Catatan Approval | Lihat & tambah catatan pada sebuah task; tetap tersimpan walau task-nya sudah selesai. |
+| Lampiran Dokumen | Kelola dokumen yang dilampirkan sepanjang alur satu process instance, termasuk di tahap yang sudah selesai. |
+| Grup & User | Kelola candidate group dan user Flowable (cari/buat grup, lihat & tambah anggota, buat user). |
+| Notifikasi Task Baru | Pemantauan berkala (polling) sebuah candidate group, dengan badge di toolbar dan notifikasi peramban; tetap berjalan di latar walau dialognya ditutup. |
+| Bandingkan Versi Diagram | Bandingkan dua versi Process Definition yang sudah dideploy — elemen ditambahkan/dihapus/diubah, dianalisis dari XML masing-masing versi langsung di peramban. |
+| Editor DMN (Decision Table) | Komponen terpisah `<DmnEditor>` — canvas dmn-js dengan toolbar Baru/Buka/Undo/Redo/Export, fokus pada decision table (DRD & literal expression bawaan dmn-js tetap bisa diakses lewat tombol "View DRD" tapi bukan target utama). |
+| Deploy DMN ke Flowable | Kirim file `.dmn` sebagai deployment baru ke Flowable DMN REST API. **Endpoint belum diverifikasi ke server Flowable sungguhan** — lihat catatan di [Catatan Teknis](#catatan-teknis). |
+| Uji Coba Decision | Jalankan decision table yang sudah dideploy dengan nilai variabel tertentu, lihat hasil aturan yang cocok, tanpa perlu menjalankan process instance. Sama seperti Deploy DMN, endpoint-nya belum diverifikasi. |
+| Muat DMN dari Flowable | Kebalikan dari Deploy DMN — cari decision yang sudah dideploy by key, pilih versinya, lalu muat XML-nya ke editor. Endpoint-nya belum diverifikasi, sama seperti fitur DMN lain. |
+| Grup & User (di editor DMN) | Menu "Flowable" di `<DmnEditor>` juga punya "Grup & User…" — memakai dialog yang sama persis dengan editor BPMN (identity management bukan konsep khusus proses/decision, jadi tidak ada yang perlu dibedakan). |
+| Bandingkan Versi Decision | Versi DMN dari "Bandingkan Versi Diagram" — bandingkan dua versi Decision yang sudah dideploy, elemen ditambahkan/dihapus/diubah (rule, kolom input/output, hit policy) dianalisis dari XML masing-masing versi langsung di peramban. Pakai endpoint DMN yang sama seperti fitur DMN lain di atas — **belum diverifikasi ke server Flowable sungguhan**. |
+| Riwayat Eksekusi Decision | Versi DMN dari "Riwayat / Audit Trail" — lihat setiap kali sebuah decision dievaluasi Flowable (kapan, versi mana, berhasil/gagal), bisa dipersempit ke satu Process Instance ID atau ke yang gagal saja (untuk memantau kasus no-hit/error dari Business Rule Task). **Endpoint belum diverifikasi ke server Flowable sungguhan.** |
+| Pantau Decision Gagal (No-Hit) | Versi DMN dari "Notifikasi Task Baru" — polling berkala untuk evaluasi decision yang gagal (badge lonceng + notifikasi peramban), berguna kalau Business Rule Task pemanggilnya diset `decisionTaskThrowErrorOnNoHits="true"`. **Endpoint belum diverifikasi ke server Flowable sungguhan**, sama seperti Riwayat Eksekusi Decision (satu endpoint yang sama). |
+| Dipakai oleh Proses Mana Saja? | Cek proses mana saja yang memanggil sebuah decision lewat Business Rule Task, sebelum deploy ulang decision tersebut — dianalisis dari XML versi terbaru tiap Process Definition langsung di peramban. Tidak seperti fitur DMN lain, **kedua endpoint yang dipakai di sini sudah terverifikasi** (endpoint proses yang sama dengan Dashboard Ringkasan/Bandingkan Versi Diagram). |
+
+## Arsitektur
+
+**Stack:** Vue 3 (`<script setup>` + TypeScript), Vuetify 3, Pinia, bpmn-js,
+dmn-js, Vite.
+
+Setiap fitur Flowable mengikuti pola yang sama:
+
+- Satu composable `useXxx.ts` per fitur — membungkus pemanggilan Flowable
+  REST API dan state reaktif (`isLoading`, `statusMessage`,
+  `statusIsError`, hasil).
+- Satu komponen dialog `XxxDialog.vue` per fitur — `v-dialog` Vuetify yang
+  mengonsumsi composable-nya dan merender form/hasil.
+- `EditorToolbar.vue` memancarkan satu event per fitur (mis. `@deploy`,
+  `@tasks`), didengarkan oleh `BpmnEditor.vue` untuk membuka dialog
+  terkait.
+- `useFlowableStore()` (Pinia) adalah satu-satunya sumber
+  `baseUrl`/`username`/`password`/`authHeader`, dibaca dari `.env` — lihat
+  [Konfigurasi Flowable](#konfigurasi-flowable-env).
+- `StatusBox.vue` dipakai bersama semua dialog untuk menampilkan status
+  dan hasil operasi.
+
+`<DmnEditor>` mengikuti pola yang sama persis, komponen & file terpisah dari
+`<BpmnEditor>` (lihat daftar di [Struktur direktori](#struktur-direktori)) —
+keduanya tidak saling bergantung dan bisa dipakai sendiri-sendiri.
+
+### Struktur direktori
+
+```
+src/
+  moddle/             Ekstensi moddle BPMN untuk atribut flowable: (assignee,
+                       candidateGroups, dll — wajib ada supaya diagram bisa
+                       di-deploy & dieksekusi di Flowable), plus XML diagram
+                       kosong default untuk "Baru" (blank-bpmn-diagram.ts /
+                       blank-dmn-diagram.ts).
+  types/dmn-js.d.ts   Deklarasi tipe TypeScript manual untuk dmn-js (library
+                       ini tidak menyediakan tipe sama sekali) — hanya
+                       mencakup API yang dipakai useDmnModeler.ts.
+  stores/             Pinia store: diagram.ts (filename & status "dirty"
+                       diagram BPMN yang sedang dibuka), flowable.ts (baseUrl/
+                       username/password/authHeader, dari .env — dipakai
+                       bersama oleh fitur BPMN maupun DMN).
+  types/flowable.ts   Tipe TypeScript untuk request/response Flowable REST
+                       (proses maupun DMN).
+  composables/        Satu use*.ts per fitur (logika + state reaktif) —
+                       lihat DEVELOPER_GUIDE.md untuk detail endpoint tiap
+                       fitur. useDmnModeler.ts membungkus siklus hidup
+                       instance dmn-js (mirip useBpmnModeler.ts untuk
+                       bpmn-js); useDeployDmn.ts & useExecuteDecision.ts
+                       untuk integrasi Flowable DMN REST API;
+                       useLoadBpmnFromFlowable.ts & useLoadDmnFromFlowable.ts
+                       untuk "Muat dari Flowable" (kebalikan dari Deploy);
+                       useCompareVersions.ts & useCompareDmnVersions.ts untuk
+                       "Bandingkan Versi" (diff elemen antar versi, client-side);
+                       useDecisionExecutionHistory.ts untuk "Riwayat Eksekusi
+                       Decision" (padanan useAuditTrail.ts di sisi DMN);
+                       useNotifyDecisionFailures.ts untuk "Pantau Decision
+                       Gagal (No-Hit)" (padanan useNotifyTasks.ts);
+                       useDecisionUsage.ts untuk "Dipakai oleh Proses Mana
+                       Saja?" (scan client-side, endpoint proses yang sudah
+                       terverifikasi);
+                       useDraftAutosave.ts untuk simpan/pulihkan draft ke
+                       localStorage, dipakai BpmnEditor.vue & DmnEditor.vue
+                       — lihat [Draft Otomatis](#draft-otomatis-reload-tidak-hilang).
+  components/         BpmnEditor.vue (komponen utama BPMN) + EditorToolbar.vue,
+                       dan satu XxxDialog.vue (plus komponen baris pendukung
+                       bila ada, mis. TaskRow.vue) per fitur BPMN, termasuk
+                       LoadBpmnFromFlowableDialog.vue & CompareVersionsDialog.vue.
+                       DmnEditor.vue (komponen utama DMN, independen) +
+                       DmnEditorToolbar.vue, ExportDmnDialog.vue,
+                       DeployDmnDialog.vue, TestDecisionDialog.vue,
+                       LoadDmnFromFlowableDialog.vue, CompareDmnVersionsDialog.vue,
+                       DecisionExecutionHistoryDialog.vue,
+                       NotifyDecisionFailuresDialog.vue, DecisionUsageDialog.vue.
+                       IdentityDialog.vue ("Grup & User") dipakai bersama oleh
+                       BpmnEditor.vue maupun DmnEditor.vue — tidak ada versi
+                       DMN terpisah karena identity management bukan konsep
+                       yang berbeda antara proses dan decision.
+  plugins/vuetify.ts  Setup Vuetify + tema warna.
+  vite-env.d.ts       Deklarasi tipe untuk `import.meta.env.VITE_FLOWABLE_*`.
+```
+
+## Instalasi & Menjalankan
 
 ```bash
-cp .env.example .env   # isi URL/username/password Flowable Anda (lihat "Konfigurasi Flowable" di bawah)
+cp .env.example .env   # isi URL/username/password Flowable Anda
 npm install
 npm run dev      # dev server, default http://localhost:5173
 npm run build    # type-check (vue-tsc) + build produksi ke dist/
 npm run preview  # jalankan hasil build produksi secara lokal
 ```
 
-Sudah diverifikasi: `npm run build` berjalan bersih tanpa error TypeScript,
-dan sudah dites end-to-end dengan Playwright: editor (Baru/Buka/Undo/Redo/
-Export/Zoom, termasuk drag shape dari palette dan cek reaktivitas tombol
-Undo/Redo), Deploy ke Flowable (deploy langsung ke server tiruan dengan
-Basic Auth dari `.env`, tombol "Salin Perintah curl", dan penanganan error
-koneksi), Start Instance (Process Definition Key terisi otomatis dari
-diagram yang dibuka, "Deteksi Variabel dari Diagram" menemukan variabel dari
-kondisi gateway & candidate group berisi `${...}`, baris variabel manual
-tetap ada saat dialog ditutup-buka lagi, kirim ke server tiruan dengan Basic
-Auth, "Salin Perintah curl", validasi Process Definition Key kosong, dan
-penanganan error koneksi), Task (cari task ke server tiruan, klaim,
-reassign, delegasikan lalu resolve, ubah due date & prioritas lalu hapus due
-date, selesaikan task hingga hilang dari daftar, indikator "TERLAMBAT" untuk
-task yang jatuh temponya sudah lewat, dan dialog yang mengosongkan hasil
-pencarian tiap kali dibuka ulang), dan Lacak Proses (cari instance yang
-sedang berjalan lalu verifikasi marker highlight benar-benar muncul di SVG
-kanvas, tombol Bersihkan Sorotan menghapusnya lagi, Lihat Variabel memuat
-variabel proses, refresh otomatis mendeteksi saat proses selesai lalu
-membersihkan sorotan & berhenti sendiri, fallback ke riwayat saat instance
-tidak lagi berjalan, dan pesan "tidak ditemukan" saat tidak ada di kedua
-tempat), dan Kontrol Proses (suspend/aktifkan/hentikan instance ke server
-tiruan, validasi ID kosong, field ID instance yang otomatis dikosongkan
-setelah Hentikan/Cancel berhasil, serta suspend/aktifkan definisi proses
-dengan opsi "sertakan instance yang berjalan"), dan Riwayat/Audit Trail
-(cari instance selesai maupun yang masih berjalan, timeline aktivitas
-terurut lengkap dengan siapa mengerjakan & durasi tiap tahap, pesan "tidak
-ditemukan" yang mengarahkan ke Lacak Proses, dan dialog yang mengosongkan
-hasil tiap kali dibuka ulang), dan Dashboard Ringkasan (tiga proses tiruan
-dengan satu endpoint statistik sengaja dibuat gagal untuk memastikan "?"
-muncul di kolomnya tanpa mengosongkan kolom lain, urutan baris terverifikasi
-task-terlambat-dulu lalu alfabetis, baris total terhitung benar, dan dialog
-yang mengosongkan hasil tiap kali dibuka ulang), dan Catatan Approval
-(memuat catatan task yang sudah ada lengkap dengan penulis & waktu,
-penulis kosong tampil sebagai "(tanpa nama)", pesan "Belum ada catatan
-untuk task ini." untuk task tanpa catatan, tambah catatan dengan maupun
-tanpa nama penulis lalu muncul di daftar setelah reload otomatis, validasi
-Task ID kosong dan catatan kosong, penanganan error HTTP/koneksi, dan
-dialog yang mengosongkan hasil tiap kali dibuka ulang), dan Lampiran
-Dokumen (lampiran dari dua tahap berbeda satu instance — satu di task yang
-sudah selesai, satu di task yang masih aktif — sama-sama muncul dengan
-info tahap/pengunggah/waktu, hanya lampiran di task aktif yang punya
-tombol Hapus, unduh isi lampiran dari server tiruan, hapus lampiran dengan
-konfirmasi lalu hilang dari daftar, resolusi Business Key lewat instance
-berjalan, pesan "tidak ditemukan" untuk business key yang tidak ada di
-mana pun, pesan instance-tanpa-task-tercatat dan instance-tanpa-lampiran,
-bagian Tambah Lampiran Baru yang otomatis tersembunyi kalau tidak ada task
-aktif digantikan catatan "Proses sudah selesai", unggah lampiran via
-tautan URL lalu muncul di daftar setelah reload otomatis, validasi nama
-lampiran kosong dan tidak ada file/tautan, penanganan error HTTP/koneksi,
-dan dialog yang mengosongkan hasil tiap kali dibuka ulang), dan Grup &
-User (cari grup tanpa filter maupun dengan filter nama yang menyaring
-hasil, pesan "tidak ada grup ditemukan" untuk filter yang tidak cocok,
-Lihat Anggota memuat daftar anggota grup yang punya anggota maupun yang
-kosong, Tambah Anggota berhasil lalu muncul di daftar anggota setelah
-reload otomatis, kegagalan Tambah Anggota karena user belum terdaftar
-(foreign key) ditampilkan sebagai error, validasi User ID kosong, Buat
-Grup dan Buat User berhasil dengan field yang mengosongkan diri lalu
-tetap menampilkan error yang jelas untuk ID yang sudah dipakai, validasi
-Group ID/User ID kosong, penanganan error HTTP/koneksi, dan dialog yang
-mengosongkan hasil tiap kali dibuka ulang), dan Notifikasi Task Baru
-(validasi Candidate Group kosong, kegagalan HTTP saat baseline tidak
-menyalakan interval, mulai memantau dengan interval minimum 10 detik
-lalu field & tombol Mulai Pantau terkunci, **dialog ditutup lalu polling
-tetap berjalan di latar** — task baru yang muncul saat dialog tertutup
-tercermin di badge lonceng toolbar, dibuka lagi menampilkan entri log &
-status terbaru, Berhentikan menghentikan interval sungguhan (dicek tidak
-ada tick lagi setelahnya), dan tombol Izinkan Notifikasi Peramban
-menampilkan status granted/denied/tidak tersedia tanpa error), dan
-Bandingkan Versi Diagram (cari versi untuk key yang tidak ditemukan/error
-HTTP, dua versi sungguhan yang beda elemen — added/removed/modified
-lengkap dengan pesan perubahan nama & tujuan alur — terhitung benar,
-versi tunggal dibandingkan ke dirinya sendiri menampilkan pesan "tidak
-ada perbedaan", kegagalan HTTP saat mengambil XML salah satu versi, dan
-dialog yang mengosongkan hasil tiap kali dibuka ulang).
+## Contoh Diagram
+
+Folder `examples/` berisi satu pasang diagram contoh, dibuat dari matrix
+approval "MATRIX APPROVAL BERITA ACARA" (routing approval berdasarkan
+jenis klien/tender dan nilai project):
+
+| File | Isi |
+| - | - |
+| `examples/keputusan-approval-bod.dmn` | Decision table "Tentukan Approval BOD & Checker Berita Acara" — 2 kolom input (jenis klien, nilai project) → 4 kolom output (label approval, daftar approver group, level checker OPS/Legal, level checker Finance). |
+| `examples/approval-berita-acara.bpmn` | Proses yang memanggil decision di atas lewat Business Rule Task, lalu menjalankan 3 checker berurutan dan tahap Approval BOD (multi-instance sequential — jumlah & urutan approver-nya otomatis mengikuti hasil decision, bukan hardcode). |
+
+Buka salah satunya lewat tombol "Buka…" di `<BpmnEditor>`/`<DmnEditor>`
+untuk melihat/mengedit, atau deploy langsung ke Flowable lewat menu
+"Flowable" di masing-masing toolbar. **Kedua file punya beberapa asumsi
+eksplisit** di komentar XML paling atas (satuan nilai project, batas
+antar-tier, level checker untuk tier yang tidak disebutkan gambar
+sumbernya, dll.) — baca komentarnya dan sesuaikan rule di file DMN kalau
+ada yang meleset dari proses approval yang sebenarnya di perusahaan Anda;
+BPMN-nya tidak perlu diubah karena semua kombinasi approver/checker
+datang dari hasil decision.
+
+Diagram ini juga jadi pemicu dua penambahan kecil di
+`src/moddle/flowable-moddle.ts`: `BusinessRuleTaskProps`
+(`flowable:decisionTableReferenceKey`) dan `MultiInstanceProps`
+(`flowable:collection`/`flowable:elementVariable`) — sebelumnya moddle
+extension ini hanya mencakup atribut User Task & Service Task, jadi kedua
+atribut ini akan gugur diam-diam kalau task Business Rule/multi-instance
+dibuka lalu di-export ulang lewat editor ini.
 
 ## Konfigurasi Flowable (.env)
 
@@ -144,367 +195,155 @@ langsung dari browser dengan kredensial tertanam seperti ini.
 `.env` sudah masuk `.gitignore` (jangan commit kredensial asli); `.env.example`
 tetap ikut ke-commit sebagai template.
 
-## Struktur Project
+## Integrasi ke Project Lain
 
-```
-src/
-  moddle/
-    flowable-moddle.ts    Ekstensi moddle BPMN untuk atribut flowable:
-                          (assignee, candidateGroups, dll.) — port 1:1 dari
-                          FLOWABLE_MODDLE di build_modeler.py versi lama.
-                          WAJIB ada supaya diagram yang dibuat/edit di sini
-                          tetap bisa di-deploy & dieksekusi di Flowable.
-    blank-diagram.ts      XML diagram kosong untuk "Baru".
-  stores/
-    diagram.ts            Pinia store: filename & status "dirty" diagram
-                          yang sedang dibuka (dipakai lintas komponen).
-    flowable.ts            baseUrl/username/password Flowable — dibaca dari
-                          `import.meta.env.VITE_FLOWABLE_*` (lihat
-                          "Konfigurasi Flowable" di atas), dipakai bersama
-                          oleh Deploy dan semua fitur Flowable berikutnya.
-  types/
-    flowable.ts            Tipe TypeScript untuk request/response Flowable
-                          REST, ditambah satu per fitur seiring di-port
-                          (DeploymentResponse untuk Deploy;
-                          StartProcessInstanceRequest/ProcessInstanceResponse/
-                          ProcessVariablePayload untuk Start Instance;
-                          FlowableTask/TaskQueryResponse/TaskSearchParams
-                          untuk Task; RuntimeProcessInstance/
-                          HistoricProcessInstance/ProcessInstanceVariable/
-                          RuntimeExecution untuk Lacak Proses;
-                          HistoricActivityInstance untuk Riwayat/Audit
-                          Trail — reuse HistoricProcessInstance untuk
-                          ringkasannya; ProcessDefinitionSummary/
-                          DashboardRow untuk Dashboard Ringkasan).
-  composables/
-    useBpmnModeler.ts     Bungkus lifecycle bpmn-js (init/destroy/import/
-                          export/undo-redo/zoom) jadi API reaktif Vue, plus
-                          getRootProcessId() & detectProcessVariableNames()
-                          (dipakai Start Instance untuk auto-fill & deteksi
-                          variabel dari kondisi gateway/candidate group).
-    useDeployFlowable.ts   Logika Deploy: POST multipart ke
-                          /repository/deployments, plus generator perintah
-                          curl untuk fallback kalau fetch() diblokir CORS.
-    useStartProcessInstance.ts  Logika Start Instance: POST JSON ke
-                          /runtime/process-instances, plus generator
-                          perintah curl.
-    useFlowableTasks.ts    Logika Task: GET /runtime/tasks (cari & filter)
-                          plus claim/complete/reassign/delegate/resolve/
-                          due-date-&-prioritas lewat POST atau PUT ke
-                          /runtime/tasks/{id}. Satu instance dibuat di
-                          TaskDialog.vue dan action-nya dibagi ke tiap
-                          TaskRow.vue supaya semua status tampil di satu
-                          area yang sama (seperti #task-status di versi
-                          HTML lama).
-    useProcessTracking.ts  Logika Lacak Proses: cari instance via
-                          /runtime/process-instances (fallback ke
-                          /history/historic-process-instances kalau tidak
-                          sedang berjalan), sorot node aktif di kanvas lewat
-                          canvas.addMarker()/removeMarker() berdasarkan
-                          /runtime/executions, refresh otomatis via
-                          setInterval, plus fetchVariables() untuk tombol
-                          "Lihat Variabel". Menerima getModeler() (bukan
-                          instance modeler langsung) supaya selalu memakai
-                          diagram yang sedang aktif di editor.
-    useProcessControl.ts   Logika Kontrol Proses: suspend/activate instance
-                          via PUT /runtime/process-instances/{id}, hentikan
-                          permanen via DELETE (dengan deleteReason opsional),
-                          suspend/activate definisi proses via PUT
-                          /repository/process-definitions/{id}.
-    useAuditTrail.ts       Logika Riwayat/Audit Trail: cari ringkasan via
-                          /history/historic-process-instances, lalu timeline
-                          lengkap via /history/historic-activity-instances
-                          (terurut startTime asc). Juga meng-export
-                          activityTypeLabel()/formatDuration(), dipakai
-                          langsung oleh AuditTrailDialog.vue untuk merender
-                          tiap baris timeline.
-    useDashboardSummary.ts  Logika Dashboard Ringkasan: daftar process
-                          definition via /repository/process-definitions,
-                          lalu 4 hitungan independen per proses (instance
-                          berjalan/selesai, task terbuka/terlambat) —
-                          kegagalan satu hitungan jadi null ("?" di UI)
-                          tanpa mengosongkan hitungan lain di baris yang
-                          sama. Diurutkan task-terlambat-dulu, lalu nama.
-    useTaskComments.ts     Logika Catatan Approval: GET/POST
-                          /runtime/tasks/{taskId}/comments (POST dengan
-                          saveProcessInstanceId: true agar catatan tetap ada
-                          setelah task selesai). loadComments punya opsi
-                          showStatus agar pesan "Catatan berhasil
-                          ditambahkan." tidak langsung tertimpa saat
-                          addComment me-reload daftar.
-    useTaskAttachments.ts  Logika Lampiran Dokumen: resolve Process
-                          Instance ID (runtime, fallback riwayat — sama
-                          seperti Lacak Proses/Riwayat), lalu agregasi
-                          lampiran dari SETIAP task historis (bukan cuma
-                          yang aktif) via
-                          /history/historic-task-instances +
-                          /runtime/tasks/{id}/attachments per tahap.
-                          Hapus/tambah lampiran hanya diizinkan ke task
-                          yang masih ada di /runtime/tasks (isTaskActive).
-    useIdentity.ts         Logika Grup & User: cari/buat candidate group
-                          (/identity/groups), lihat & tambah anggota
-                          (/identity/users?memberOfGroup=.../
-                          /identity/groups/{id}/members), buat user
-                          (/identity/users). Semua aksi — termasuk
-                          Tambah Anggota yang dipanggil dari GroupRow.vue —
-                          melapor ke satu status area yang sama, seperti
-                          modal aslinya.
-    useNotifyTasks.ts      Logika Notifikasi Task Baru: polling
-                          /runtime/tasks?candidateGroup=... tiap interval
-                          (minimum 10 detik), diff terhadap ID task yang
-                          sudah pernah terlihat, catat entri log +
-                          notifikasi peramban (kalau diizinkan) untuk yang
-                          baru. HARUS di-instantiate satu kali saja, di
-                          BpmnEditor.vue (bukan di dalam NotifyDialog.vue),
-                          supaya polling & badge lonceng toolbar tetap
-                          jalan walau dialognya ditutup — lihat komentar
-                          di file ini untuk alasannya.
-    useCompareVersions.ts  Logika Bandingkan Versi Diagram: cari semua versi
-                          Process Definition dengan key yang sama
-                          (/repository/process-definitions?key=...&sort=
-                          version&order=desc), ambil XML mentah tiap versi
-                          (/repository/process-definitions/{id}/
-                          resourcedata), lalu diff sepenuhnya di sisi
-                          peramban — tidak ada endpoint diff bawaan di
-                          Flowable REST API. Parsing pakai DOMParser bawaan
-                          browser, elemen dikumpulkan per id (tag, name,
-                          sourceRef, targetRef, attachedToRef), lalu
-                          dibandingkan jadi ditambahkan/dihapus/diubah/tidak
-                          berubah. Pakai ulang `activityTypeLabel` dari
-                          useAuditTrail.ts untuk label tipe elemen.
-  components/
-    BpmnEditor.vue         Komponen utama: canvas + toolbar + file input
-                          tersembunyi untuk "Buka" + dialog export/deploy/
-                          start instance.
-    EditorToolbar.vue      Toolbar (Vuetify v-app-bar): Baru/Buka/Undo/Redo/
-                          Export/menu Flowable/lonceng Notifikasi Task Baru
-                          (dengan badge unseen-count)/Zoom/nama file/status.
-    ExportDialog.vue       Dialog menampilkan XML hasil export + tombol
-                          salin ke clipboard / unduh .bpmn.
-    DeployDialog.vue       Dialog Deploy ke Flowable: URL (read-only, dari
-                          .env), nama file, Deploy Langsung / Salin
-                          Perintah curl, area status.
-    StartInstanceDialog.vue  Dialog Start Instance: URL (read-only), Process
-                          Definition Key (auto-fill dari diagram), Business
-                          Key opsional, baris Variabel Proses dinamis
-                          (nama/nilai/tipe), "Deteksi Variabel dari Diagram",
-                          Start Instance / Salin Perintah curl, area status.
-    TaskDialog.vue         Dialog Task: URL (read-only), form filter
-                          (candidate group, process instance ID, rentang
-                          jatuh tempo, rentang prioritas, urutan), tombol
-                          Cari Task, area status, daftar TaskRow hasil
-                          pencarian.
-    TaskRow.vue            Satu baris hasil pencarian task: ringkasan
-                          (nama/ID/assignee/owner/prioritas/jatuh tempo,
-                          indikator TERLAMBAT), Klaim & Selesaikan,
-                          Reassign & Delegasikan/Resolve, edit due date &
-                          prioritas.
-    TrackProcessDialog.vue  Dialog Lacak Proses: URL (read-only),
-                          Process Instance ID / Business Key, Cari Status,
-                          Bersihkan Sorotan di Diagram, kontrol Refresh
-                          Otomatis (muncul hanya saat ada instance yang
-                          sedang dilacak), area status, daftar
-                          ProcessInstanceCard hasil pencarian.
-    ProcessInstanceCard.vue  Satu kartu hasil: instance berjalan (dengan
-                          tombol Lihat Variabel) atau instance dari riwayat
-                          (ditampilkan tanpa tombol variabel/highlight).
-    ProcessControlDialog.vue  Dialog Kontrol Proses: URL (read-only), bagian
-                          Instance Proses (Suspend/Aktifkan/Hentikan +
-                          alasan penghentian) dan bagian Definisi Proses
-                          (Suspend/Aktifkan + checkbox "sertakan instance
-                          yang berjalan"), area status.
-    AuditTrailDialog.vue   Dialog Riwayat/Audit Trail: URL (read-only),
-                          Process Instance ID / Business Key, tombol Lihat
-                          Riwayat, kartu ringkasan instance, daftar kartu
-                          timeline aktivitas terurut.
-    DashboardDialog.vue    Dialog Dashboard Ringkasan: URL (read-only),
-                          tombol Muat Dashboard, tabel per-proses (nama/key/
-                          versi/berjalan/selesai/task terbuka/task
-                          terlambat) dengan baris total dan catatan "?"
-                          kalau ada statistik yang gagal diambil.
-    CommentsDialog.vue      Dialog Catatan Approval: URL (read-only), Task
-                          ID + tombol Muat Catatan, daftar kartu catatan
-                          (penulis/waktu/isi), form Tambah Catatan Baru
-                          (isi + penulis opsional), area status.
-    AttachmentsDialog.vue   Dialog Lampiran Dokumen: URL (read-only),
-                          Process Instance ID / Business Key, tombol Cari &
-                          Muat Lampiran, daftar AttachmentRow hasil
-                          pencarian, bagian Tambah Lampiran Baru (pilih
-                          task aktif tujuan, nama/deskripsi, file atau
-                          tautan URL) yang tersembunyi kalau tidak ada task
-                          aktif, catatan "Proses sudah selesai" sebagai
-                          gantinya, area status.
-    AttachmentRow.vue       Satu baris hasil lampiran: nama, tahap asal,
-                          deskripsi, tipe/pengunggah/waktu, tombol Unduh
-                          (atau Buka Tautan untuk lampiran bertipe URL),
-                          tombol Hapus (hanya muncul kalau tahap asalnya
-                          masih task aktif).
-    IdentityDialog.vue      Dialog Grup & User: URL (read-only), filter
-                          nama grup + tombol Cari Grup, daftar GroupRow
-                          hasil pencarian, bagian Buat Grup Baru (ID/nama/
-                          tipe), bagian Buat User Baru (ID/nama depan/
-                          nama belakang/email/password), area status.
-    GroupRow.vue            Satu baris hasil grup: nama/ID/tipe, tombol
-                          Lihat Anggota yang lazy-load daftar anggota saat
-                          pertama diklik, form inline "+ Tambah Anggota".
-    NotifyDialog.vue        Dialog Notifikasi Task Baru: URL (read-only),
-                          Candidate Group + Interval Cek (dikunci saat
-                          sedang memantau), Mulai Pantau/Berhentikan/
-                          Izinkan Notifikasi Peramban, area status, daftar
-                          entri log task baru. Menerima instance
-                          useNotifyTasks() dari BpmnEditor.vue lewat prop
-                          `notify`, bukan membuatnya sendiri.
-    CompareVersionsDialog.vue  Dialog Bandingkan Versi Diagram: URL
-                          (read-only), Process Definition Key + tombol Cari
-                          Versi, pilihan Versi A/Versi B (select, otomatis
-                          terisi versi terbaru vs sebelumnya), tombol
-                          Bandingkan, ringkasan jumlah perbedaan, daftar
-                          kartu berwarna untuk elemen Ditambahkan (hijau)/
-                          Dihapus (merah)/Diubah (kuning, dengan rincian
-                          perubahan), area status.
-    StatusBox.vue          Kotak status/output monospace yang dipakai
-                          bersama oleh semua dialog fitur Flowable.
-  plugins/vuetify.ts        Setup Vuetify + tema warna (dipetakan dari
-                          palet warna versi HTML lama).
-  vite-env.d.ts             Deklarasi tipe TypeScript untuk
-                          `import.meta.env.VITE_FLOWABLE_*`.
-```
+`<BpmnEditor>` dan `<DmnEditor>` adalah dua komponen independen — pakai
+salah satu saja, atau keduanya, sesuai kebutuhan project Anda.
 
-## Referensi Endpoint Flowable
-
-Dokumentasi endpoint Flowable REST API yang dipakai tiap fitur, beserta
-parameter yang dikirim — untuk developer yang perlu tahu persis apa yang
-terjadi di balik tiap tombol tanpa harus baca kode composable-nya langsung.
-Semua endpoint memakai Basic Auth (header `Authorization`, hanya dikirim
-kalau `VITE_FLOWABLE_USERNAME` atau `VITE_FLOWABLE_PASSWORD` diisi — lihat
-"Konfigurasi Flowable (.env)" di atas) dan base URL dari
-`VITE_FLOWABLE_BASE_URL` (semua path di bawah ini relatif terhadap base URL
-tersebut). Bagian ini akan ditambah bertahap per fitur.
-
-### Deploy ke Flowable
-
-Sumber: `useDeployFlowable.ts` + `DeployDialog.vue`.
-
-```
-POST /repository/deployments
-Content-Type: multipart/form-data  (di-set otomatis oleh browser, JANGAN
-                                     di-set manual — akan merusak boundary)
-```
-
-Body (`FormData`), satu part:
-
-- `file` — `Blob` (`application/octet-stream`) berisi XML diagram saat ini,
-  dengan nama file sesuai field "Nama file deployment" di dialog. Flowable
-  menolak (HTTP 400) kalau ekstensinya bukan salah satu dari `.bpmn`,
-  `.bpmn20.xml`, `.bar`, atau `.zip` — aplikasi ini tidak memvalidasi
-  ekstensi di sisi client, pesan error dari Flowable langsung ditampilkan
-  apa adanya di area status.
-
-Kalau key proses di dalam XML sama dengan deployment yang sudah ada
-sebelumnya, Flowable otomatis membuat versi baru (menaikkan nomor versi) —
-tidak menimpa deployment lama. Ini yang dimanfaatkan fitur "Bandingkan Versi
-Diagram" untuk membandingkan antar versi.
-
-Respons sukses (HTTP 200/201), field yang dipakai aplikasi ini:
-
-- `id` — ID deployment, ditampilkan ke user.
-- `name` — nama deployment (biasanya = nama file yang dikirim).
-- `deploymentTime` — timestamp, ditampilkan ke user.
-- (`category`, `parentDeploymentId`, `url`, `tenantId` juga ada di respons
-  tapi tidak dipakai di UI.)
-
-Kalau respons bukan 2xx, body respons (teks mentah dari Flowable, biasanya
-JSON berisi pesan error) ditampilkan langsung di area status tanpa
-diparsing lebih lanjut. Kalau `fetch()` sendiri gagal (network error/CORS),
-aplikasi menampilkan pesan generik yang menyarankan kemungkinan penyebab
-(CORS belum diizinkan, server tidak terjangkau, dsb.) dan menawarkan tombol
-"Salin Perintah curl" sebagai alternatif — perintah curl yang dihasilkan
-persis meniru request di atas (`curl -u "user:pass" -X POST ".../repository/deployments" -F "file=@nama.bpmn;type=application/octet-stream"`).
-
-## Cara Pakai di Project Lain
-
-Komponen `<BpmnEditor>` menerima dua prop opsional:
+Komponen `<BpmnEditor>` menerima empat prop opsional:
 
 ```vue
 <BpmnEditor
   :initial-xml="xmlBpmnAnda"
   initial-filename="proses-saya.bpmn"
+  autosave-key="bpmnStudioVue.draft.bpmn.v1"
+  :enable-autosave="true"
 />
 ```
 
-Kalau `initial-xml` tidak diisi, editor akan mulai dengan diagram kosong
-(satu Start Event) — sama seperti tombol "Baru" di versi lama.
+Kalau `initial-xml` tidak diisi, editor mulai dengan diagram kosong (satu
+Start Event) — sama seperti tombol "Baru" di toolbar — **kecuali** ada
+draft tersimpan otomatis dari sesi sebelumnya, lihat [Draft
+Otomatis](#draft-otomatis-reload-tidak-hilang) di bawah.
 
-Untuk memakainya di project Vue+TS yang sudah berjalan: salin folder `src/`
-ke project Anda (atau jadikan package terpisah kalau mau dipakai di lebih
-dari satu project), lalu install dependency yang sama: `bpmn-js`, `vuetify`,
-`@mdi/font`, `pinia` (kalau project Anda belum pakai Pinia, state di
-`stores/diagram.ts` & `stores/flowable.ts` bisa diubah jadi `ref()` biasa
-tanpa mengubah cara komponen memakainya), lalu tambahkan tiga variabel
-`VITE_FLOWABLE_*` (lihat "Konfigurasi Flowable" di atas) ke `.env` project
-Anda.
+Komponen `<DmnEditor>` menerima prop yang sejajar:
 
-## Rencana Fase Berikutnya
+```vue
+<DmnEditor
+  :initial-xml="xmlDmnAnda"
+  initial-filename="keputusan-saya.dmn"
+  autosave-key="bpmnStudioVue.draft.dmn.v1"
+  :enable-autosave="true"
+/>
+```
 
-Semua fitur yang ada di versi HTML lama sudah selesai di-port ke Vue +
-TypeScript — daftar di bawah ini murni catatan riwayat portingnya:
+Kalau `initial-xml` tidak diisi, editor mulai dengan satu decision table
+kosong (satu kolom input, satu kolom output, satu rule) — sama seperti
+tombol "Baru" di toolbar DMN — **kecuali** ada draft tersimpan otomatis
+dari sesi sebelumnya, lihat [Draft Otomatis](#draft-otomatis-reload-tidak-hilang)
+di bawah.
 
-- ~~Deploy ke Flowable~~ (selesai — lihat `useDeployFlowable.ts` +
-  `DeployDialog.vue`)
-- ~~Start Instance (dengan variabel proses)~~ (selesai — lihat
-  `useStartProcessInstance.ts` + `StartInstanceDialog.vue`, plus
-  `getRootProcessId()`/`detectProcessVariableNames()` di `useBpmnModeler.ts`)
-- ~~Task (cari/klaim/selesaikan, reassign/delegasikan/resolve, due date &
-  prioritas, filter & sort)~~ (selesai — lihat `useFlowableTasks.ts` +
-  `TaskDialog.vue` + `TaskRow.vue`)
-- ~~Lacak Proses (+ visualisasi posisi real-time di kanvas)~~ (selesai —
-  lihat `useProcessTracking.ts` + `TrackProcessDialog.vue` +
-  `ProcessInstanceCard.vue`, plus CSS global `.active-node-highlight` di
-  `BpmnEditor.vue`)
-- ~~Kontrol Proses (suspend/activate/cancel instance)~~ (selesai — lihat
-  `useProcessControl.ts` + `ProcessControlDialog.vue`)
-- ~~Riwayat / Audit Trail~~ (selesai — lihat `useAuditTrail.ts` +
-  `AuditTrailDialog.vue`)
-- ~~Dashboard Ringkasan~~ (selesai — lihat `useDashboardSummary.ts` +
-  `DashboardDialog.vue`)
-- ~~Catatan Approval (comments)~~ (selesai — lihat `useTaskComments.ts` +
-  `CommentsDialog.vue`)
-- ~~Lampiran Dokumen (agregasi lintas seluruh task historis satu proses)~~
-  (selesai — lihat `useTaskAttachments.ts` + `AttachmentsDialog.vue` +
-  `AttachmentRow.vue`)
-- ~~Grup & User (identity management)~~ (selesai — lihat `useIdentity.ts` +
-  `IdentityDialog.vue` + `GroupRow.vue`)
-- ~~Notifikasi Task Baru (polling)~~ (selesai — lihat `useNotifyTasks.ts` +
-  `NotifyDialog.vue` + lonceng badge di `EditorToolbar.vue`)
-- ~~Bandingkan Versi Diagram~~ (selesai — lihat `useCompareVersions.ts` +
-  `CompareVersionsDialog.vue`)
+### Draft Otomatis (reload tidak hilang)
 
-Fitur baru di luar cakupan tool aslinya bisa ditambahkan mengikuti pola
-yang sudah dipakai konsisten di atas: satu composable `useXxx.ts` untuk
-logika (fetch ke Flowable, state reaktif: `statusMessage`/`statusIsError`/
-`isLoading`/hasil) + satu komponen `XxxDialog.vue` untuk tampilannya
-(`v-dialog` + field-field Vuetify). Baca `baseUrl`/`authHeader` dari
-`useFlowableStore()` — jangan tambahkan field URL/username/password baru
-per fitur seperti kelemahan versi HTML lama, dan jangan tampilkan
-username/password di UI manapun (konsisten dengan "Konfigurasi Flowable"
-di atas). Tambahkan dropdown-item baru di `EditorToolbar.vue`'s menu
-"Flowable" untuk membuka dialog fitur tersebut.
+Diagram yang sedang dibuka **tidak pernah tersimpan ke mana pun** kecuali
+lewat Export/Deploy manual — sebelumnya, ini artinya reload halaman (atau
+menutup tab tanpa sengaja) langsung menghilangkan seluruh pekerjaan yang
+belum di-export, karena diagramnya cuma hidup di memori instance
+bpmn-js/dmn-js saat itu. `useDraftAutosave.ts` menutup celah ini: setiap
+ada perubahan (`commandStack.changed`), XML diagram saat itu disimpan ke
+`localStorage` browser (debounce 800ms supaya tidak menulis di setiap
+keystroke), lalu dibaca kembali saat komponen di-mount. Kalau ditemukan,
+editor memulihkan draft tersebut alih-alih memulai dari diagram kosong,
+dan menampilkan pesan singkat "Draft dipulihkan (2 Sep 16.41)." di area
+status (nama file & pesan status di toolbar terpotong dengan "…" kalau
+terlalu panjang untuk lebar layar — arahkan kursor untuk melihat teks
+lengkapnya).
+
+Beberapa hal penting soal fitur ini:
+
+- **Hanya aktif kalau editor "memiliki" dokumennya sendiri** — begitu prop
+  `initial-xml` diisi (host aplikasi lain yang menyuplai kontennya), draft
+  otomatis dinonaktifkan total (tidak menyimpan, tidak memulihkan). Ini
+  disengaja: kalau host punya penyimpanan sendiri untuk konten yang dia
+  suplai, draft lokal yang basi bisa menimpa versi yang lebih baru dari
+  host tanpa sepengetahuannya. Matikan juga secara eksplisit lewat
+  `:enable-autosave="false"` kalau perlu (mis. kebijakan perusahaan yang
+  melarang penyimpanan apa pun di browser).
+- Tombol **"Baru"** menghapus draft yang tersimpan (setelah dikonfirmasi
+  lewat dialog konfirmasi browser) — logikanya: "Baru" berarti membuang
+  pekerjaan saat ini, jadi reload setelahnya seharusnya tidak
+  mengembalikan yang baru saja dibuang.
+- Draft cuma **satu snapshot yang terus ditimpa** (bukan riwayat/versi) —
+  membuka file lain lewat "Buka…" langsung menimpa draft lama dengan isi
+  file yang baru dibuka.
+- `autosave-key` hanya perlu diubah kalau satu halaman host menyematkan
+  lebih dari satu `<BpmnEditor>`/`<DmnEditor>` sekaligus (mis. beberapa
+  tab diagram terbuka bersamaan) — tiap instance butuh key sendiri supaya
+  tidak saling menimpa draft.
+- Best-effort: kalau `localStorage` penuh, dinonaktifkan browser, atau
+  sedang mode incognito yang membatasinya, autosave diam-diam tidak
+  melakukan apa-apa (tidak ada error yang mengganggu pekerjaan) — hanya
+  berarti Anda kembali ke kondisi lama (harus Export/Deploy manual).
+
+Langkah integrasi ke project Vue + TypeScript yang sudah berjalan:
+
+1. Salin folder `src/` ke project Anda (atau jadikan package terpisah
+   kalau mau dipakai di lebih dari satu project). Kalau hanya butuh satu
+   dari dua editor, file-file milik editor yang tidak dipakai (lihat
+   [Struktur direktori](#struktur-direktori)) boleh dihapus.
+2. Install dependency yang sama: `bpmn-js`, `vuetify`, `@mdi/font`,
+   `pinia`. Kalau memakai `<DmnEditor>`, tambahkan juga `dmn-js`. Kalau
+   project Anda belum pakai Pinia, state di `stores/diagram.ts` &
+   `stores/flowable.ts` bisa diubah jadi `ref()` biasa tanpa mengubah cara
+   komponen memakainya.
+3. Tambahkan tiga variabel `VITE_FLOWABLE_*` (lihat [Konfigurasi
+   Flowable](#konfigurasi-flowable-env)) ke `.env` project Anda —
+   dipakai bersama oleh `<BpmnEditor>` dan `<DmnEditor>` (base URL DMN
+   REST API Flowable diasumsikan sama dengan base URL proses; lihat
+   catatan di [Catatan Teknis](#catatan-teknis) kalau server Anda
+   mengekspos keduanya di base URL yang berbeda).
+
+### Menambahkan fitur baru
+
+Fitur Flowable baru mengikuti pola yang sama seperti fitur yang sudah ada
+(lihat [Arsitektur](#arsitektur)):
+
+1. Buat composable `useXxx.ts` — baca `baseUrl`/`authHeader` dari
+   `useFlowableStore()`, jangan tambahkan field URL/username/password
+   baru per fitur, dan jangan tampilkan username/password di UI manapun.
+2. Buat komponen dialog `XxxDialog.vue` yang mengonsumsi composable
+   tersebut, dengan field "URL REST Flowable" read-only dan `StatusBox`
+   untuk menampilkan status.
+3. Tambahkan `v-list-item` baru di menu "Flowable" pada
+   `EditorToolbar.vue`, dan wiring event + state dialog di
+   `BpmnEditor.vue`.
 
 ## Catatan Teknis
 
-- Versi `bpmn-js` di sini (18.x) lebih baru dari yang dipakai versi HTML
-  lama (17.11.1 via CDN). Ada satu perubahan API yang relevan: opsi
-  `keyboard: { bindTo: window }` sudah dihapus di bpmn-js 18 — binding
-  keyboard sekarang implisit ke container. Composable `useBpmnModeler.ts`
-  sudah disesuaikan untuk ini.
-- Kredensial Flowable sekarang datang dari `.env` (lihat "Konfigurasi
-  Flowable" di atas), bukan dari form — ini beda dari versi HTML lama yang
-  punya field URL/username/password yang bisa diedit di tiap modal. Kalau
-  suatu saat butuh ganti server Flowable tanpa rebuild (mis. staging vs
-  produksi), pertimbangkan generate `.env` per environment saat proses
-  deploy/CI, bukan menambahkan kembali field edit di UI.
-- Build produksi saat ini menghasilkan satu JS bundle besar (~1.3MB,
-  sebagian besar dari bpmn-js + Vuetify + font MDI). Untuk project produksi,
-  pertimbangkan code-splitting (`import()` dinamis untuk `<BpmnEditor>`,
-  atau plugin tree-shaking Vuetify) kalau ukuran bundle jadi masalah — belum
-  dilakukan di Fase 1 ini supaya fokus ke fungsionalitas dulu.
+- bpmn-js di-inisialisasi tanpa opsi `keyboard.bindTo` eksplisit —
+  keyboard shortcut (Undo/Redo, dsb.) otomatis ter-bind ke container
+  diagram lewat konfigurasi bawaan di `useBpmnModeler.ts`.
+- Panel Properti (`usePropertiesPanel.ts` + `PropertiesPanel.vue`) tidak
+  memanggil Flowable REST API sama sekali — berbeda dari hampir semua
+  fitur lain di project ini, panel ini murni membaca/menulis model
+  diagram lewat API bawaan bpmn-js (`modeling`, `bpmnFactory`, event bus),
+  jadi tidak butuh koneksi ke server Flowable untuk berfungsi. Field
+  Candidate Groups/Users/Assignee, Condition Expression, dan
+  multi-instance (mode cardinality tetap) adalah porting 1:1 dari panel
+  properti versi HTML single-file yang jadi cikal-bakal project ini.
+  Section Business Rule Task (Decision Table Reference Key,
+  throw-error-on-no-hit) dan mode multi-instance berbasis collection
+  adalah tambahan baru — tidak ada di versi HTML aslinya — karena
+  dibutuhkan untuk mengedit atribut `flowable:decisionTableReferenceKey`
+  /`flowable:decisionTaskThrowErrorOnNoHits`/`flowable:collection`
+  /`flowable:elementVariable` yang dipakai `examples/approval-berita-acara.bpmn`.
+- Build produksi saat ini menghasilkan satu JS bundle besar (~2.3MB,
+  sebagian besar dari bpmn-js + dmn-js + Vuetify + font MDI). Kalau
+  ukuran bundle jadi masalah di project Anda, pertimbangkan
+  code-splitting (`import()` dinamis untuk `<BpmnEditor>`/`<DmnEditor>`)
+  atau plugin tree-shaking Vuetify.
+- dmn-js tidak menyediakan tipe TypeScript sama sekali (berbeda dari
+  bpmn-js) — `src/types/dmn-js.d.ts` adalah deklarasi tipe manual yang
+  hanya mencakup API yang benar-benar dipakai `useDmnModeler.ts`, bukan
+  tipe lengkap library-nya.
+- **Endpoint DMN REST API Flowable (`/dmn-repository/deployments` dan
+  `/dmn-runtime/decision-executions`, dipakai oleh Deploy DMN & Uji Coba
+  Decision) mengikuti konvensi umum modul `flowable-dmn-rest` tapi belum
+  diverifikasi terhadap server Flowable sungguhan** — berbeda dari semua
+  endpoint proses lain di project ini yang sudah dikonfirmasi. Server
+  Anda mungkin juga mengekspos DMN REST API di base URL/context path
+  yang berbeda dari proses (`VITE_FLOWABLE_BASE_URL` dipakai apa adanya
+  untuk keduanya di project ini). Kalau permintaan Deploy DMN/Uji Coba
+  Decision gagal dengan HTTP 404, cek dulu path & base URL DMN REST API
+  di server Flowable Anda, lalu sesuaikan `useDeployDmn.ts` /
+  `useExecuteDecision.ts` kalau perlu.
