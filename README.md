@@ -370,6 +370,57 @@ src/
                           `import.meta.env.VITE_FLOWABLE_*`.
 ```
 
+## Referensi Endpoint Flowable
+
+Dokumentasi endpoint Flowable REST API yang dipakai tiap fitur, beserta
+parameter yang dikirim — untuk developer yang perlu tahu persis apa yang
+terjadi di balik tiap tombol tanpa harus baca kode composable-nya langsung.
+Semua endpoint memakai Basic Auth (header `Authorization`, hanya dikirim
+kalau `VITE_FLOWABLE_USERNAME` atau `VITE_FLOWABLE_PASSWORD` diisi — lihat
+"Konfigurasi Flowable (.env)" di atas) dan base URL dari
+`VITE_FLOWABLE_BASE_URL` (semua path di bawah ini relatif terhadap base URL
+tersebut). Bagian ini akan ditambah bertahap per fitur.
+
+### Deploy ke Flowable
+
+Sumber: `useDeployFlowable.ts` + `DeployDialog.vue`.
+
+```
+POST /repository/deployments
+Content-Type: multipart/form-data  (di-set otomatis oleh browser, JANGAN
+                                     di-set manual — akan merusak boundary)
+```
+
+Body (`FormData`), satu part:
+
+- `file` — `Blob` (`application/octet-stream`) berisi XML diagram saat ini,
+  dengan nama file sesuai field "Nama file deployment" di dialog. Flowable
+  menolak (HTTP 400) kalau ekstensinya bukan salah satu dari `.bpmn`,
+  `.bpmn20.xml`, `.bar`, atau `.zip` — aplikasi ini tidak memvalidasi
+  ekstensi di sisi client, pesan error dari Flowable langsung ditampilkan
+  apa adanya di area status.
+
+Kalau key proses di dalam XML sama dengan deployment yang sudah ada
+sebelumnya, Flowable otomatis membuat versi baru (menaikkan nomor versi) —
+tidak menimpa deployment lama. Ini yang dimanfaatkan fitur "Bandingkan Versi
+Diagram" untuk membandingkan antar versi.
+
+Respons sukses (HTTP 200/201), field yang dipakai aplikasi ini:
+
+- `id` — ID deployment, ditampilkan ke user.
+- `name` — nama deployment (biasanya = nama file yang dikirim).
+- `deploymentTime` — timestamp, ditampilkan ke user.
+- (`category`, `parentDeploymentId`, `url`, `tenantId` juga ada di respons
+  tapi tidak dipakai di UI.)
+
+Kalau respons bukan 2xx, body respons (teks mentah dari Flowable, biasanya
+JSON berisi pesan error) ditampilkan langsung di area status tanpa
+diparsing lebih lanjut. Kalau `fetch()` sendiri gagal (network error/CORS),
+aplikasi menampilkan pesan generik yang menyarankan kemungkinan penyebab
+(CORS belum diizinkan, server tidak terjangkau, dsb.) dan menawarkan tombol
+"Salin Perintah curl" sebagai alternatif — perintah curl yang dihasilkan
+persis meniru request di atas (`curl -u "user:pass" -X POST ".../repository/deployments" -F "file=@nama.bpmn;type=application/octet-stream"`).
+
 ## Cara Pakai di Project Lain
 
 Komponen `<BpmnEditor>` menerima dua prop opsional:
