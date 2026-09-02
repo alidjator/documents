@@ -1,5 +1,9 @@
 # Developer Guide — Referensi Endpoint Flowable
 
+| Dibuat oleh | Tanggal |
+| - | - |
+| alidjator@gmail.com | 2 September 2026 |
+
 Dokumen ini berisi referensi endpoint Flowable REST API yang dipakai tiap
 fitur di BPMN Studio (Vue + TypeScript), beserta parameter yang dikirim —
 untuk developer yang perlu tahu persis apa yang terjadi di balik tiap
@@ -29,6 +33,41 @@ tersebut).
 | 10 | [Grup & User](#10-grup--user-identity-management) | `useIdentity.ts` |
 | 11 | [Notifikasi Task Baru](#11-notifikasi-task-baru-polling) | `useNotifyTasks.ts` |
 | 12 | [Bandingkan Versi Diagram](#12-bandingkan-versi-diagram) | `useCompareVersions.ts` |
+| 13 | [Deploy DMN](#13-deploy-dmn) | `useDeployDmn.ts` |
+| 14 | [Uji Coba Decision](#14-uji-coba-decision) | `useExecuteDecision.ts` |
+| 15 | [Muat dari Flowable (BPMN)](#15-muat-dari-flowable-bpmn) | `useLoadBpmnFromFlowable.ts` |
+| 16 | [Muat dari Flowable (DMN)](#16-muat-dari-flowable-dmn) | `useLoadDmnFromFlowable.ts` |
+| 17 | [Grup & User (di editor DMN)](#17-grup--user-di-editor-dmn) | `useIdentity.ts` (dipakai bersama) |
+| 18 | [Bandingkan Versi Decision](#18-bandingkan-versi-decision) | `useCompareDmnVersions.ts` |
+| 19 | [Riwayat Eksekusi Decision](#19-riwayat-eksekusi-decision) | `useDecisionExecutionHistory.ts` |
+| 20 | [Pantau Decision Gagal (No-Hit)](#20-pantau-decision-gagal-no-hit) | `useNotifyDecisionFailures.ts` |
+| 21 | [Dipakai oleh Proses Mana Saja?](#21-dipakai-oleh-proses-mana-saja) | `useDecisionUsage.ts` |
+
+Fitur 1–12 dan 15 di atas adalah bagian dari `<BpmnEditor>`. Fitur 13, 14,
+16, 18, 19, dan 20 adalah bagian dari `<DmnEditor>` (komponen terpisah,
+independen — lihat [README.md](./README.md#arsitektur)) dan memakai
+`VITE_FLOWABLE_BASE_URL` yang sama dengan fitur BPMN, dengan **caveat
+penting** yang diulang di setiap bagian DMN: endpoint DMN-nya belum
+diverifikasi terhadap server Flowable sungguhan. Fitur 17 dipakai oleh
+KEDUA editor sekaligus lewat komponen/composable yang sama — lihat
+bagiannya untuk penjelasan kenapa tidak ada versi DMN terpisah. Fitur 21
+adalah PENGECUALIAN pada caveat DMN di atas — kedua endpoint yang
+dipakainya adalah endpoint proses yang sudah terverifikasi (bagian 7/12),
+bukan endpoint DMN.
+
+**Panel Properti** (`usePropertiesPanel.ts` + `PropertiesPanel.vue`, bagian
+dari `<BpmnEditor>`) sengaja TIDAK masuk daftar bernomor di atas — dokumen
+ini adalah referensi endpoint Flowable REST, dan Panel Properti tidak
+memanggil satu pun endpoint Flowable. Panel ini murni membaca/menulis
+model diagram lewat API bawaan bpmn-js (`modeling.updateModdleProperties`,
+`bpmnFactory`, event bus `selection.changed`/`element.changed`/`root.set`)
+untuk mengedit ID/nama proses, Candidate Groups/Users/Assignee &
+multi-instance pada User Task, Decision Table Reference Key pada Business
+Rule Task, dan Condition Expression pada Sequence Flow — semuanya
+tersimpan langsung di XML diagram, baru terkirim ke Flowable saat fitur 1
+(Deploy) dipakai. Lihat [README.md](./README.md#catatan-teknis) untuk
+detail lebih lanjut, termasuk bagian mana yang porting 1:1 dari versi HTML
+single-file dan bagian mana yang baru ditambahkan.
 
 ## 1. Deploy ke Flowable
 
@@ -657,3 +696,405 @@ ada request tambahan):
 | ID hanya ada di map A | Dihapus |
 | ID ada di keduanya, minimal satu field (`tag`, `name`, `sourceRef`, `targetRef`, `attachedToRef`) berbeda | Diubah — disertai daftar deskripsi perubahannya (mis. "tipe: Approval / Task → Service Task", "nama: ... → ...", "titik asal alur berubah"). |
 | ID ada di keduanya, semua field sama | Tidak berubah |
+
+## 13. Deploy DMN
+
+Sumber: `src/composables/useDeployDmn.ts` + `src/components/DeployDmnDialog.vue`
+(bagian dari `<DmnEditor>`).
+
+> **Caveat — baca sebelum mengandalkan fitur ini di produksi:** berbeda
+> dari fitur 1–12 di atas, endpoint ini **belum diverifikasi** terhadap
+> server Flowable sungguhan. Flowable menyediakan REST API DMN lewat
+> modul terpisah (`flowable-dmn-rest`); path di bawah mengikuti konvensi
+> yang didokumentasikan Flowable, tapi apakah modul ini aktif dan
+> terjangkau di base URL yang sama dengan REST API proses
+> (`VITE_FLOWABLE_BASE_URL`) tergantung cara server Anda di-deploy. Kalau
+> permintaan gagal dengan HTTP 404, periksa dulu path/port REST API DMN
+> di server Anda sebelum mengira composable-nya salah — hanya
+> `useDeployDmn.ts` yang perlu disesuaikan kalau ternyata beda.
+
+```
+POST /dmn-repository/deployments
+Content-Type: multipart/form-data  (di-set otomatis oleh browser, JANGAN
+                                     di-set manual — akan merusak boundary)
+```
+
+Body (`FormData`), satu part — sama persis polanya dengan fitur 1 (Deploy
+ke Flowable untuk BPMN):
+
+| Field | Tipe | Keterangan |
+| - | - | - |
+| `file` | `Blob` (`application/octet-stream`) | XML DMN saat ini, dengan nama file sesuai field "Nama file deployment" di dialog (dialog mem-validasi harus berakhiran `.dmn`). |
+
+Respons sukses, field yang dipakai aplikasi ini (`DmnDeploymentResponse`):
+
+| Field | Keterangan |
+| - | - |
+| `id` | ID deployment, ditampilkan ke user. |
+| `name` | Nama deployment. |
+| `deploymentTime` | Timestamp, ditampilkan ke user. |
+| `category`, `parentDeploymentId`, `url`, `tenantId` | Ada di respons tapi tidak dipakai di UI. |
+
+Kalau respons bukan 2xx, body respons mentah ditampilkan di area status,
+dengan tambahan saran khusus: kalau HTTP 404, kemungkinan server tidak
+mengekspos REST API DMN di base URL yang sama dengan REST API proses.
+Kalau `fetch()` gagal (network error/CORS), pesan generik + tombol "Salin
+Perintah curl":
+
+```
+curl -u "user:pass" -X POST ".../dmn-repository/deployments" \
+  -F "file=@nama.dmn;type=application/octet-stream"
+```
+
+## 14. Uji Coba Decision
+
+Sumber: `src/composables/useExecuteDecision.ts` + `src/components/TestDecisionDialog.vue`
+(bagian dari `<DmnEditor>`).
+
+> **Caveat yang sama seperti bagian 13** — endpoint ini belum
+> diverifikasi terhadap server Flowable sungguhan. Bentuk path & body di
+> bawah mengikuti konvensi yang didokumentasikan Flowable (decisionKey +
+> variables masuk, array hasil aturan yang cocok keluar), tapi kalau
+> ternyata berbeda di server Anda, hanya `useExecuteDecision.ts` yang
+> perlu disesuaikan.
+
+```
+POST /dmn-runtime/decision-executions
+Content-Type: application/json
+```
+
+Body (JSON):
+
+| Field | Wajib | Keterangan |
+| - | - | - |
+| `decisionKey` | Ya | Key decision yang sudah dideploy. Dialog otomatis mengisi field ini dari decision yang sedang terbuka di editor (`getActiveDecisionId()`), tapi boleh diubah manual. Kalau kosong, request tidak dikirim — langsung ditolak di sisi client dengan pesan "Isi Decision Key dulu." |
+| `variables` | Tidak | Objek `{ [nama]: nilai }`, dibangun dari baris-baris "Variabel Input" di dialog (baris dengan nama kosong diabaikan). Hanya disertakan di body kalau ada minimal satu baris variabel dengan nama terisi. |
+
+Setiap baris variabel di-cast di sisi client sesuai dropdown tipe sebelum
+dikirim — persis logika yang sama dengan fitur 2 (Start Instance):
+
+| Tipe dropdown | Cara cast | Fallback |
+| - | - | - |
+| `string` | Dikirim apa adanya. | — |
+| `number` | `Number(raw)`. | Kalau hasilnya `NaN`, fallback ke string mentahnya. |
+| `boolean` | `true` hanya kalau nilai input persis `"true"` atau `"1"`. | Selain itu dikirim `false`. |
+
+Contoh body lengkap:
+
+```json
+{
+  "decisionKey": "tentukanDiskon",
+  "variables": {
+    "totalBelanja": 1500000,
+    "isMemberVip": true
+  }
+}
+```
+
+Respons sukses, field yang dipakai aplikasi ini (`ExecuteDecisionResult`):
+
+| Field | Keterangan |
+| - | - |
+| `decisionResult` | Array objek, satu objek per baris aturan (rule) yang cocok — tiap objek berisi pasangan nama-kolom-output/nilai. Dirender sebagai daftar kartu, satu kartu per baris hasil. |
+
+Kalau body respons sukses ternyata bukan JSON valid, atau JSON-nya tidak
+mengandung `decisionResult`, aplikasi tetap menganggap request berhasil
+dan menampilkan teks mentah responsnya apa adanya.
+
+Kalau respons bukan 2xx, body respons mentah ditampilkan di area status,
+dengan saran yang sama seperti fitur 13 untuk kasus HTTP 404. Kalau
+`fetch()` gagal, pesan generik + tombol "Salin Perintah curl" — perintah
+curl yang dihasilkan (`buildCurlCommand`) sengaja ditulis dengan quoting
+gaya bash/macOS/Linux (kutip tunggal untuk body JSON), **berbeda** dari
+perintah curl fitur 2 (Start Instance) yang bergaya Command
+Prompt/PowerShell — tidak ada pola sebelumnya untuk fitur DMN ini, jadi
+dipilih bentuk yang lebih portabel:
+
+```
+curl -u "user:pass" -X POST ".../dmn-runtime/decision-executions" \
+  -H "Content-Type: application/json" -d '{"decisionKey":"tentukanDiskon","variables":{"totalBelanja":1500000}}'
+```
+
+## 15. Muat dari Flowable (BPMN)
+
+Sumber: `src/composables/useLoadBpmnFromFlowable.ts` +
+`src/components/LoadBpmnFromFlowableDialog.vue` (bagian dari
+`<BpmnEditor>`). Kebalikan dari fitur 1 (Deploy ke Flowable) — mengambil
+XML mentah sebuah Process Definition yang sudah dideploy, lalu memuatnya
+ke canvas (menimpa diagram yang sedang terbuka, sama seperti "Buka…" dari
+file lokal — tidak ada dialog konfirmasi, mengikuti konvensi "Buka…" yang
+sudah ada).
+
+Dua panggilan berurutan:
+
+```
+GET /repository/process-definitions?key=<key>&sort=version&order=desc&size=100
+GET /repository/process-definitions/{processDefinitionId}/resourcedata
+```
+
+Endpoint pertama sama persis dengan yang dipakai fitur 12 (Bandingkan
+Versi Diagram) untuk mencari semua versi sebuah key — respons `{ data:
+ProcessDefinitionVersion[] }`, field `id`, `version`, `suspended`, dipakai
+untuk mengisi dropdown "Versi" di dialog. Endpoint kedua (dipanggil begitu
+user memilih versi & klik "Muat ke Editor") juga sama persis dengan yang
+dipakai fitur 12 untuk mengambil XML satu versi — mengembalikan XML BPMN
+mentah sebagai teks, langsung dioper ke `loadXml()` milik
+`useBpmnModeler.ts`. **Kedua endpoint ini sudah terverifikasi** (dipakai
+di fitur lain yang sudah dikonfirmasi jalan), berbeda dari endpoint DMN
+di bagian 13/14/16.
+
+Nama file yang ditampilkan setelah dimuat: `<key>-v<versi>.bpmn` (mis.
+`beritaAcaraApproval-v3.bpmn`) — bukan nama asli file yang pernah
+di-deploy (Flowable tidak selalu menyimpan nama file asli di response
+pencarian), supaya tetap informatif kalau di-export ulang.
+
+Kalau pencarian atau pengambilan XML gagal (HTTP non-2xx atau network
+error), pesan error ditampilkan di area status dialog (mengandung status
+HTTP + body respons kalau ada, atau hint CORS/network kalau `fetch()`-nya
+sendiri gagal) — dialog tetap terbuka supaya user bisa coba lagi, tidak
+ikut menimpa diagram yang sedang terbuka.
+
+## 16. Muat dari Flowable (DMN)
+
+Sumber: `src/composables/useLoadDmnFromFlowable.ts` +
+`src/components/LoadDmnFromFlowableDialog.vue` (bagian dari
+`<DmnEditor>`). Kebalikan dari fitur 13 (Deploy DMN), mengikuti pola yang
+sama persis dengan bagian 15 di atas tapi untuk decision:
+
+```
+GET /dmn-repository/decisions?key=<key>&sort=version&order=desc&size=100
+GET /dmn-repository/decisions/{decisionId}/resourcedata
+```
+
+> **Caveat yang sama seperti bagian 13/14** — path & bentuk respons kedua
+> endpoint ini mengikuti konvensi yang didokumentasikan Flowable
+> (menyejajarkan pola `/repository/process-definitions` di bagian 15 yang
+> SUDAH terverifikasi), tapi **belum diverifikasi** terhadap server
+> Flowable sungguhan. Kalau gagal dengan HTTP 404, server Anda mungkin
+> mengekspos DMN REST API di base URL/path yang berbeda dari REST API
+> proses — hanya `useLoadDmnFromFlowable.ts` yang perlu disesuaikan kalau
+> ternyata beda.
+
+Endpoint pertama mengembalikan `{ data: DmnDecisionVersion[] }`, field
+`id`, `key`, `name`, `version` — dipakai mengisi dropdown "Versi" (label
+menampilkan nama decision, fallback ke key kalau nama kosong). Endpoint
+kedua mengembalikan XML DMN mentah sebagai teks, dioper ke `loadXml()`
+milik `useDmnModeler.ts`. Nama file setelah dimuat: `<key>-v<versi>.dmn`.
+
+Sama seperti bagian 15: diagram DMN yang sedang terbuka ditimpa tanpa
+konfirmasi (konsisten dengan "Buka…"), dan kegagalan pencarian/pengambilan
+XML menampilkan pesan error di area status dialog tanpa menutup dialognya.
+
+## 17. Grup & User (di editor DMN)
+
+Menu "Flowable" di `<DmnEditor>` punya item "Grup & User…" persis seperti
+`<BpmnEditor>` (bagian 10) — dan itu literally komponen yang sama:
+`DmnEditor.vue` meng-import `IdentityDialog.vue` dari lokasi yang sama
+tanpa modifikasi apa pun, karena komponen itu sudah sepenuhnya
+self-contained (`useFlowableStore()` + `useIdentity()` sendiri, satu-satunya
+prop-nya adalah `modelValue`). Endpoint yang dipakai (`/identity/groups`,
+`/identity/users`) juga persis sama — lihat bagian 10 untuk detail
+lengkapnya, karena identity management (grup & user Flowable) bukan konsep
+yang berbeda antara mengelola process instance dan mengelola decision;
+tidak ada alasan untuk membuat versi kedua dari dialog atau composable-nya.
+
+## 18. Bandingkan Versi Decision
+
+Sumber: `src/composables/useCompareDmnVersions.ts` +
+`src/components/CompareDmnVersionsDialog.vue` (bagian dari `<DmnEditor>`).
+Padanan DMN dari fitur 12 (Bandingkan Versi Diagram) — sama-sama tidak ada
+endpoint diff bawaan di Flowable, jadi fitur ini mengambil XML mentah dua
+versi Decision lalu membandingkannya sepenuhnya di sisi peramban lewat
+`DOMParser`.
+
+> **Caveat yang sama seperti bagian 13/14/16** — endpoint di bawah
+> mengikuti konvensi yang didokumentasikan Flowable tapi **belum
+> diverifikasi** terhadap server Flowable sungguhan. Kalau gagal dengan
+> HTTP 404, server Anda mungkin mengekspos DMN REST API di base URL/path
+> yang berbeda dari REST API proses.
+
+### 18.1 Cari Versi
+
+```
+GET /dmn-repository/decisions?key=<decision key>&sort=version&order=desc&size=100
+```
+
+Respons: `{ data: DmnDecisionVersion[] }`, field per versi: `id`, `key`,
+`name`, `version`. Sama seperti bagian 12.1: dropdown "Versi B" otomatis
+terisi versi terbaru (index 0), dropdown "Versi A" otomatis terisi versi
+sebelumnya.
+
+### 18.2 Ambil XML & Diff
+
+```
+GET /dmn-repository/decisions/{id}/resourcedata
+```
+
+Dipanggil dua kali paralel untuk versi A dan versi B, mengembalikan XML DMN
+mentah masing-masing versi sebagai teks.
+
+Perbedaan penting dari diff BPMN (bagian 12.2): elemen BPMN (task, gateway,
+sequence flow) semuanya berbagi field yang sama (`name`, `sourceRef`,
+`targetRef`, dst), tapi elemen DMN sangat bervariasi bentuknya — sel
+`inputEntry`/`outputEntry` sebuah `rule` cuma punya teks FEEL di elemen
+anak `<text>`, kolom `input`/`output` cuma punya `label`/`typeRef`,
+`decisionTable` cuma punya `hitPolicy`. Daripada menangani tiap tag secara
+khusus, `parseDmnElements()` mengekstrak setiap elemen ber-`id` menjadi
+bentuk generik `{ id, tag, label, content }`:
+
+- `label` — atribut `label` atau `name` elemen tersebut (kosong kalau
+  tidak ada).
+- `content` — gabungan semua atribut elemen selain `id`/`label`/`name`
+  (format `nama=nilai`), ditambah teks dari elemen anak langsung `<text>`
+  kalau ada (ini yang menangkap kondisi/nilai FEEL sebuah
+  `inputEntry`/`outputEntry`, atau ekspresi sebuah `inputExpression`).
+
+Tag yang dilewati (`DIFF_SKIP_TAGS`, murni struktural/diagram-interchange):
+`definitions`, `DMNDI`, `DMNDiagram`, `DMNShape`, `DMNEdge`, `Bounds`,
+`waypoint`, `extensionElements`.
+
+Kedua map (versi A dan versi B) lalu dibandingkan murni di client:
+
+| Kondisi | Kategori |
+| - | - |
+| ID hanya ada di map B | Ditambahkan |
+| ID hanya ada di map A | Dihapus |
+| ID ada di keduanya, `tag`/`label`/`content` ada yang berbeda | Diubah — disertai daftar deskripsi perubahannya (mis. "isi: \"Wajib\" → \"Tidak Wajib\"" untuk `outputEntry` yang nilainya berubah, atau "label: ... → ..." untuk kolom yang di-rename). |
+| ID ada di keduanya, semuanya sama | Tidak berubah |
+
+Pendekatan generik ini berarti diff bekerja seragam untuk setiap level DMN
+(decision, decisionTable, input/output, inputExpression, rule dan
+sel-selnya) tanpa perlu kode khusus per tipe elemen — konsekuensinya,
+deskripsi perubahan kurang deskriptif dibanding versi BPMN (yang punya
+istilah seperti "titik asal alur berubah"), tapi tetap menunjukkan dengan
+tepat elemen mana dan bagian mana yang berubah.
+
+## 19. Riwayat Eksekusi Decision
+
+Sumber: `src/composables/useDecisionExecutionHistory.ts` +
+`src/components/DecisionExecutionHistoryDialog.vue` (bagian dari
+`<DmnEditor>`). Padanan DMN dari fitur 6 (Riwayat / Audit Trail) — bedanya,
+fitur 6 melacak *proses*, fitur ini melacak *decision*: setiap kali
+Flowable mengevaluasi sebuah decision (baik dipanggil dari Business Rule
+Task di sebuah process instance, maupun lewat "Uji Coba Decision"/panggilan
+API langsung), evaluasinya bisa dicatat di riwayat DMN engine kalau history
+level server mendukungnya.
+
+> **Caveat — lebih berlapis dari fitur DMN lain:** selain path/bentuk
+> respons yang belum diverifikasi terhadap server Flowable sungguhan
+> (sama seperti bagian 13/14/16/18), fitur ini juga bergantung pada
+> *history level* DMN engine server Anda benar-benar merekam eksekusi
+> decision — kalau tidak, hasil pencarian akan selalu kosong walau
+> decision-nya memang sudah pernah dievaluasi berkali-kali. Kosongnya
+> hasil BUKAN otomatis berarti composable-nya salah; lihat pesan status
+> saat hasil kosong untuk pengingat ini.
+
+```
+GET /dmn-history/historic-decision-executions?decisionKey=<key>
+    [&instanceId=<process instance id>][&failed=true]
+    &sort=startTime&order=desc&size=100
+```
+
+| Parameter | Wajib | Keterangan |
+| - | - | - |
+| `decisionKey` | Ya | Key decision. Kalau kosong, request tidak dikirim — ditolak di sisi client dengan pesan "Isi Decision Key dulu." |
+| `instanceId` | Tidak | Process Instance ID — dipakai untuk mempersempit ke satu process instance saja, supaya bisa disilangkan dengan Process Instance ID yang sama di fitur 6 (Riwayat / Audit Trail) atau fitur 4 (Lacak Proses) di BPMN Studio. |
+| `failed` | Tidak | Dikirim `true` kalau checkbox "Hanya yang gagal (no-hit / error)" dicentang — berguna untuk memantau kasus decision yang gagal dievaluasi (mis. tidak ada rule yang cocok padahal Business Rule Task pemanggilnya diset `decisionTaskThrowErrorOnNoHits="true"`, seperti pada `examples/approval-berita-acara.bpmn`). |
+
+Respons: `{ data: HistoricDecisionExecution[] }`, field per eksekusi:
+
+| Field | Keterangan |
+| - | - |
+| `id` | ID record eksekusi. |
+| `decisionDefinitionId`, `decisionKey`, `decisionName`, `decisionVersion` | Identitas decision & versi mana yang dievaluasi. |
+| `startTime`, `endTime` | Waktu evaluasi — durasi dihitung di sisi client (`endTime - startTime`) lalu diformat lewat `formatDuration()` (dipakai bersama dari `useAuditTrail.ts`, lihat fitur 6). |
+| `instanceId`, `executionId`, `activityId` | Kalau evaluasi ini dipicu dari sebuah process instance: ID instance, ID execution, dan activity id Business Rule Task pemanggilnya. Kosong/null kalau decision dijalankan berdiri sendiri (mis. lewat "Uji Coba Decision"). |
+| `failed` | `true` kalau evaluasi gagal (mis. no-hit dengan `decisionTaskThrowErrorOnNoHits`) — baris hasil dengan `failed: true` diberi garis tepi merah di UI, sama seperti pola warna error di fitur lain. |
+
+Hasil pencarian kosong ditampilkan sebagai pesan status yang menyebutkan
+tiga kemungkinan penyebab sekaligus (belum pernah dievaluasi, filter
+terlalu sempit, atau history level server belum mencatat eksekusi decision)
+— sengaja tidak menyimpulkan salah satu, karena dari sisi client ketiganya
+tidak bisa dibedakan. Kegagalan pencarian (HTTP non-2xx atau network error)
+ditampilkan seperti fitur DMN lain, dengan tambahan saran khusus untuk HTTP
+404 (kemungkinan server tidak mengekspos REST API history DMN di base
+URL/path yang sama dengan REST API proses).
+
+## 20. Pantau Decision Gagal (No-Hit)
+
+Sumber: `src/composables/useNotifyDecisionFailures.ts` +
+`src/components/NotifyDecisionFailuresDialog.vue` + lonceng badge di
+`DmnEditorToolbar.vue` (bagian dari `<DmnEditor>`). Padanan DMN dari fitur
+11 (Notifikasi Task Baru) — arsitekturnya port 1:1 dari
+`useNotifyTasks.ts`: harus dibuat **satu kali saja** di `DmnEditor.vue`
+(bukan di dalam dialog), supaya polling & badge unseen-count tetap
+berjalan walau dialognya ditutup. Lihat komentar di `useNotifyTasks.ts`
+untuk detail arsitektur lengkapnya — bagian ini hanya mencatat bedanya.
+
+> **Caveat** — endpoint yang dipakai (`/dmn-history/historic-decision-executions`)
+> sama persis dengan fitur 19, jadi caveat-nya juga sama: belum
+> diverifikasi terhadap server Flowable sungguhan, dan bergantung pada
+> history level DMN engine server benar-benar mencatat eksekusi decision.
+
+```
+GET /dmn-history/historic-decision-executions?decisionKey=<key>&failed=true&sort=startTime&order=desc&size=100
+```
+
+Beda dari fitur 11 (yang polling `/runtime/tasks?candidateGroup=...` tanpa
+filter tambahan), polling di sini **selalu** menyertakan `failed=true` —
+fitur ini secara sengaja hanya peduli pada evaluasi yang gagal, bukan
+setiap evaluasi (itu tugas fitur 19 kalau perlu semuanya). Selebihnya pola
+diff-nya identik dengan fitur 11:
+
+| Tahap | Perilaku |
+| - | - |
+| Baseline (polling pertama setelah "Mulai Pantau" diklik) | Hanya mengisi `knownIds` awal dari ID eksekusi gagal yang sudah ada — tidak menghasilkan entri log/notifikasi (kegagalan yang sudah terjadi sebelum mulai memantau bukan "kegagalan baru"). Interval berikutnya baru dijadwalkan setelah baseline ini berhasil. |
+| Polling berikutnya | Eksekusi gagal dengan ID yang belum ada di `knownIds` dianggap baru — satu entri log ditambahkan (dibatasi 30 entri terbaru, sama seperti fitur 11), badge unseen-count di lonceng toolbar DMN bertambah satu, dan notifikasi peramban native ditampilkan kalau diizinkan. |
+
+Interval dipaksa minimum 10 detik di sisi client (`Math.max(10, ...)`),
+default 30 detik — sama seperti fitur 11. Menghentikan pemantauan murni
+`clearInterval` + reset state lokal, tidak memanggil endpoint apa pun.
+
+## 21. Dipakai oleh Proses Mana Saja?
+
+Sumber: `src/composables/useDecisionUsage.ts` +
+`src/components/DecisionUsageDialog.vue` (bagian dari `<DmnEditor>`).
+Menjawab pertanyaan "sebelum saya deploy ulang decision ini, proses mana
+saja yang bakal kena dampaknya" — Flowable tidak punya endpoint untuk ini,
+jadi fitur ini dibangun sepenuhnya di sisi client dengan endpoint yang
+SUDAH ADA dan SUDAH TERVERIFIKASI (bukan endpoint DMN):
+
+```
+GET /repository/process-definitions?latest=true&size=100
+GET /repository/process-definitions/{id}/resourcedata
+```
+
+Endpoint pertama sama persis dengan yang dipakai fitur 7 (Dashboard
+Ringkasan) untuk mengambil versi terbaru tiap Process Definition — bedanya,
+fitur ini juga membaca field `id` dari responsnya (Dashboard Ringkasan
+tidak perlu, karena dia query endpoint lain by `key`) untuk memanggil
+endpoint kedua. Endpoint kedua sama persis dengan yang dipakai fitur 12
+(Bandingkan Versi Diagram) untuk mengambil XML mentah satu Process
+Definition.
+
+Untuk **setiap** Process Definition hasil endpoint pertama (paralel via
+`Promise.allSettled` — dipilih `allSettled`, bukan `all`, supaya satu
+Process Definition yang XML-nya gagal diambil tidak menggagalkan
+pemeriksaan Process Definition lain; jumlah yang gagal dilaporkan di pesan
+status, mis. "(2 Process Definition gagal diperiksa, dilewati)"), XML-nya
+di-parse dengan `DOMParser` dan setiap elemen bertag `businessRuleTask`
+diperiksa: atributnya di-scan lewat koleksi `attributes`/`localName`
+(bukan `getAttribute('flowable:decisionTableReferenceKey')` — nama
+atribut ber-prefix seperti ini tidak selalu bisa diambil lewat
+`getAttribute` dengan pola yang sama persis tergantung cara dokumennya
+di-parse, jadi dipakai teknik yang sama seperti `useCompareDmnVersions.ts`
+membaca `label`/`typeRef` DMN) untuk menemukan atribut
+`decisionTableReferenceKey`, dibandingkan dengan Decision Key yang dicari.
+
+Setiap Business Rule Task yang cocok menghasilkan satu baris hasil
+(`DecisionUsageMatch`): nama & versi proses asal, key proses, serta id &
+nama Business Rule Task itu sendiri (satu proses bisa punya lebih dari satu
+Business Rule Task yang memanggil decision yang sama — masing-masing jadi
+baris terpisah). Hasil kosong menyebutkan secara eksplisit bahwa hanya
+versi TERBARU tiap proses yang dipindai — Process Definition versi lama
+yang sudah tidak aktif tidak diperiksa, konsisten dengan lingkup fitur 7.
